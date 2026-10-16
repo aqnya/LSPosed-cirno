@@ -1,6 +1,6 @@
 # LSPosed Framework
 
-[![Build](https://img.shields.io/github/actions/workflow/status/re-zero001/LSPosed-Irena/core.yml?branch=dev&event=push&logo=github&label=Build)](https://github.com/re-zero001/LSPosed-Irena/actions/workflows/core.yml?query=event%3Apush+branch%3Adev+is%3Acompleted) [![Channel](https://img.shields.io/badge/Follow-Telegram-blue.svg?logo=telegram)](https://t.me/lsposed-irena) [![Download](https://img.shields.io/github/v/release/LSPosed/LSPosed?color=orange&logoColor=orange&label=Download&logo=DocuSign)](https://github.com/re-zero001/LSPosed-Irena/releases/latest) [![Total](https://shields.io/github/downloads/LSPosed/LSPosed/total?logo=Bookmeter&label=Counts&logoColor=yellow&color=yellow)](https://github.com/LSPosed/LSPosed/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/aqnya/LSPosed-cirno/core.yml?branch=dev&event=push&logo=github&label=Build)](https://github.com/aqnya/LSPosed-cirno/actions/workflows/core.yml?query=event%3Apush+branch%3Adev+is%3Acompleted) [![Channel](https://img.shields.io/badge/Follow-Telegram-blue.svg?logo=telegram)](https://t.me/lsposed-cirno) [![Download](https://img.shields.io/github/v/release/aqnya/LSPosed-cirno?color=orange&logoColor=orange&label=Download&logo=DocuSign)](https://github.com/aqnya/LSPosed-cirno/releases/latest) [![Total](https://shields.io/github/downloads/aqnya/LSPosed-cirno/total?logo=Bookmeter&label=Counts&logoColor=yellow&color=yellow)](https://github.com/aqnya/LSPosed-cirno/releases)
 
 ## Introduction 
 
@@ -25,13 +25,13 @@ Android 8.1 ~ 16
 
 ## Download
 
-- Go to telegram: [@lsposed-irena](https://t.me/s/lsposed_irena)
-- For canary build, please check [Github Actions](https://github.com/re-zero001/LSPosed-Irena/actions/workflows/core.yml?query=branch%3Adev)
+- Go to telegram: [@lsposed-cirno](https://t.me/s/lsposed_cirno)
+- For canary build, please check [Github Actions](https://github.com/aqnya/LSPosed-cirno/actions/workflows/core.yml?query=branch%3Adev)
 
 ## Get Help
 
 **Only bug reports from **THE LATEST DEBUG BUILD** will be accepted.**
-- GitHub issues: [Issues](https://github.com/re-zero001/LSPosed-Irena/issues/)
+- GitHub issues: [Issues](https://github.com/aqnya/LSPosed-cirno/issues/)
 - (For Chinese speakers) 本项目只接受英语**标题**的issue。如果您不懂英语，请使用[翻译工具](https://www.deepl.com/zh/translator)
 
 ## For Developers
@@ -56,6 +56,7 @@ This fork won't have.
 - [Dobby](https://github.com/re-zero001/Dobby): used for inline hooking
 - [LSPlant](https://github.com/LSPosed/LSPlant): the core ART hooking framework
 - [LSPosed](https://github.com/LSPosed/LSPosed): fork source
+- [aqnya](https://github.com/aqnya): Cirno fork maintainer
 - [EdXposed](https://github.com/ElderDrivers/EdXposed): LSPosed fork source
 - [xz_embedded](https://github.com/tukaani-project/xz-embedded):decompress debug_info section into stripped libraries
 - [system_properties](https://github.com/topjohnwu/system_properties):switch properties access within LSPosed
