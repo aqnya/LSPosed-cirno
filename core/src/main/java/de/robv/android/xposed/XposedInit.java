@@ -311,7 +311,7 @@ public final class XposedInit {
         var librarySearchPath = sb.toString();
 
         var initLoader = XposedInit.class.getClassLoader();
-        var mcl = LspModuleClassLoader.loadApk(apk, file.preLoadedDexes, librarySearchPath, initLoader);
+        var mcl = LspModuleClassLoader.loadApk(apk, file.preLoadedDexes, librarySearchPath, initLoader, false);
 
         try {
             if (mcl.loadClass(XposedBridge.class.getName()).getClassLoader() != initLoader) {

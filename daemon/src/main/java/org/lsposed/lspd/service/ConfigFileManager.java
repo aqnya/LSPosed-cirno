@@ -486,6 +486,7 @@ public class ConfigFileManager {
                 readName(apkFile, "META-INF/xposed/native_init.list", moduleLibraryNames);
                 file.exceptionPassthrough = isExceptionPassthrough(properties);
                 file.autoHotReload = isAutoHotReload(properties);
+                file.targetApiVersion = readApiVersion(properties, "targetApiVersion");
             } else {
                 file.legacy = true;
                 readName(apkFile, "assets/xposed_init", moduleClassNames);

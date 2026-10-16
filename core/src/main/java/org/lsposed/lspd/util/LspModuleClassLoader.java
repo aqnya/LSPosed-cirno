@@ -33,8 +33,11 @@ public final class LspModuleClassLoader extends ByteBufferDexClassLoader {
     private static final String zipSeparator = "!/";
     private static final List<File> systemNativeLibraryDirs =
             splitPaths(System.getProperty("java.library.path"));
+    private static final String LEGACY_API_PACKAGE = "de.robv.android.xposed.";
     private final String apk;
     private final List<File> nativeLibraryDirs = new ArrayList<>();
+    // API 102: modules targeting 102+ must not use the legacy de.robv.android.xposed API.
+    private final boolean blockLegacyApi;
 
     private static List<File> splitPaths(String searchPath) {
         var result = new ArrayList<File>();
@@ -47,19 +50,23 @@ public final class LspModuleClassLoader extends ByteBufferDexClassLoader {
 
     private LspModuleClassLoader(ByteBuffer[] dexBuffers,
                                  ClassLoader parent,
-                                 String apk) {
+                                 String apk,
+                                 boolean blockLegacyApi) {
         super(dexBuffers, parent);
         this.apk = apk;
+        this.blockLegacyApi = blockLegacyApi;
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
     private LspModuleClassLoader(ByteBuffer[] dexBuffers,
                                  String librarySearchPath,
                                  ClassLoader parent,
-                                 String apk) {
+                                 String apk,
+                                 boolean blockLegacyApi) {
         super(dexBuffers, librarySearchPath, parent);
         initNativeLibraryDirs(librarySearchPath);
         this.apk = apk;
+        this.blockLegacyApi = blockLegacyApi;
     }
 
     private void initNativeLibraryDirs(String librarySearchPath) {
@@ -69,6 +76,10 @@ public final class LspModuleClassLoader extends ByteBufferDexClassLoader {
 
     @Override
     protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+        if (blockLegacyApi && name != null && name.startsWith(LEGACY_API_PACKAGE)) {
+            throw new ClassNotFoundException(
+                    "The legacy Xposed API is not available for modules targeting API 102 or higher: " + name);
+        }
         var cl = findLoadedClass(name);
         if (cl != null) {
             return cl;
@@ -183,7 +194,8 @@ public final class LspModuleClassLoader extends ByteBufferDexClassLoader {
     public static ClassLoader loadApk(String apk,
                                       List<SharedMemory> dexes,
                                       String librarySearchPath,
-                                      ClassLoader parent) {
+                                      ClassLoader parent,
+                                      boolean blockLegacyApi) {
         var dexBuffers = dexes.stream().parallel().map(dex -> {
             try {
                 return dex.mapReadOnly();
@@ -194,9 +206,9 @@ public final class LspModuleClassLoader extends ByteBufferDexClassLoader {
         }).filter(Objects::nonNull).toArray(ByteBuffer[]::new);
         LspModuleClassLoader cl;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            cl = new LspModuleClassLoader(dexBuffers, librarySearchPath, parent, apk);
+            cl = new LspModuleClassLoader(dexBuffers, librarySearchPath, parent, apk, blockLegacyApi);
         } else {
-            cl = new LspModuleClassLoader(dexBuffers, parent, apk);
+            cl = new LspModuleClassLoader(dexBuffers, parent, apk, blockLegacyApi);
             cl.initNativeLibraryDirs(librarySearchPath);
         }
         Arrays.stream(dexBuffers).parallel().forEach(SharedMemory::unmap);

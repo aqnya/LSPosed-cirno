@@ -7,4 +7,5 @@ parcelable PreLoadedApk {
     boolean legacy;
     boolean exceptionPassthrough;
     boolean autoHotReload;
+    int targetApiVersion;
 }
