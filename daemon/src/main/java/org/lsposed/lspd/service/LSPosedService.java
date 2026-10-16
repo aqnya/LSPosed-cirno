@@ -129,7 +129,7 @@ public class LSPosedService extends ILSPosedService.Stub {
                     LSPNotificationManager.cancelNotification(UPDATED_CHANNEL_ID, moduleName, userId);
                 }
             }
-            case Intent.ACTION_PACKAGE_ADDED, Intent.ACTION_PACKAGE_CHANGED -> {
+            case Intent.ACTION_PACKAGE_ADDED, Intent.ACTION_PACKAGE_CHANGED, Intent.ACTION_PACKAGE_REPLACED -> {
                 // make sure that the change is for the complete package, not only a
                 // component
                 String[] components = intent.getStringArrayExtra(Intent.EXTRA_CHANGED_COMPONENT_NAME_LIST);
@@ -148,6 +148,10 @@ public class LSPosedService extends ILSPosedService.Stub {
                         ConfigManager.getInstance().updateModuleApkPath(moduleName, packageState.moduleInfo.apkPath, false);
                     } else {
                         ConfigManager.getInstance().updateCache();
+                    }
+                    // API 102: an updated module may opt into reloading itself in running targets.
+                    if (Intent.ACTION_PACKAGE_REPLACED.equals(intentAction)) {
+                        LSPModuleService.autoHotReloadModule(moduleName, userId);
                     }
                 } else if (ConfigManager.getInstance().isUidHooked(uid)) {
                     // it will auto update obsolete scope from database
@@ -341,6 +345,7 @@ public class LSPosedService extends ILSPosedService.Stub {
         var packageFilter = new IntentFilter();
         packageFilter.addAction(Intent.ACTION_PACKAGE_ADDED);
         packageFilter.addAction(Intent.ACTION_PACKAGE_CHANGED);
+        packageFilter.addAction(Intent.ACTION_PACKAGE_REPLACED);
         packageFilter.addAction(Intent.ACTION_PACKAGE_FULLY_REMOVED);
         packageFilter.addDataScheme("package");
 

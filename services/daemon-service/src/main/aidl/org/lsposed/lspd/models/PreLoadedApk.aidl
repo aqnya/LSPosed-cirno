@@ -6,4 +6,5 @@ parcelable PreLoadedApk {
     List<String> moduleLibraryNames;
     boolean legacy;
     boolean exceptionPassthrough;
+    boolean autoHotReload;
 }

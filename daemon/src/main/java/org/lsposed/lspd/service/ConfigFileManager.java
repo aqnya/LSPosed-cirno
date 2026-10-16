@@ -460,6 +460,13 @@ public class ConfigFileManager {
         return "passthrough".equals(properties.getProperty("exceptionMode", "").trim());
     }
 
+    private static boolean isAutoHotReload(Properties properties) {
+        if (properties == null) {
+            return false;
+        }
+        return Boolean.parseBoolean(properties.getProperty("autoHotReload", "").trim());
+    }
+
     @Nullable
     static PreLoadedApk loadModule(String path, boolean obfuscate) {
         if (path == null) return null;
@@ -478,6 +485,7 @@ public class ConfigFileManager {
                 readName(apkFile, "META-INF/xposed/java_init.list", moduleClassNames);
                 readName(apkFile, "META-INF/xposed/native_init.list", moduleLibraryNames);
                 file.exceptionPassthrough = isExceptionPassthrough(properties);
+                file.autoHotReload = isAutoHotReload(properties);
             } else {
                 file.legacy = true;
                 readName(apkFile, "assets/xposed_init", moduleClassNames);

@@ -409,21 +409,88 @@ public class LSPModuleService extends IXposedService.Stub {
      */
     @Nullable
     private Module moduleSnapshotForReload() {
+        return snapshotForReload(loadedModule);
+    }
+
+    @Nullable
+    private static Module snapshotForReload(Module source) {
         try {
-            var file = ConfigFileManager.loadModule(loadedModule.apkPath, ConfigManager.getInstance().dexObfuscate());
+            var file = ConfigFileManager.loadModule(source.apkPath, ConfigManager.getInstance().dexObfuscate());
             if (file == null || file.legacy || file.moduleClassNames.size() != 1) return null;
             var module = new Module();
-            module.packageName = loadedModule.packageName;
-            module.appId = loadedModule.appId;
-            module.apkPath = loadedModule.apkPath;
-            module.applicationInfo = loadedModule.applicationInfo;
-            module.service = loadedModule.service;
+            module.packageName = source.packageName;
+            module.appId = source.appId;
+            module.apkPath = source.apkPath;
+            module.applicationInfo = source.applicationInfo;
+            module.service = source.service;
             module.file = file;
             return module;
         } catch (Throwable t) {
             Log.w(TAG, "failed to snapshot module for hot reload", t);
             return null;
         }
+    }
+
+    /**
+     * Triggered by the daemon when a module APK is updated (and it opted into {@code autoHotReload}).
+     * Requests a reload in every running target process that has the module injected.
+     */
+    static void autoHotReloadModule(String packageName, int userId) {
+        if (!ConfigManager.getInstance().isModuleEnabledForUser(packageName, userId)) return;
+
+        var targets = new ArrayList<LSPApplicationService.ProcessInfo>();
+        Module template = null;
+        for (var process : LSPApplicationService.getRunningProcesses()) {
+            if (process.uid / PER_USER_RANGE != userId) continue;
+            if (process.hotReloadCallback == null) continue;
+            var module = findModuleForProcess(packageName, process.uid, process.processName);
+            if (module == null) continue;
+            targets.add(process);
+            if (template == null) template = module;
+        }
+        if (template == null) return;
+
+        // The installed APK is the same for every target, so parse it once.
+        var snapshot = snapshotForReload(template);
+        if (snapshot == null || !snapshot.file.autoHotReload) return;
+
+        for (var process : targets) {
+            var callback = process.hotReloadCallback;
+            if (callback == null) continue;
+            var module = findModuleForProcess(packageName, process.uid, process.processName);
+            if (module == null) continue;
+            var perProcess = new Module();
+            perProcess.packageName = module.packageName;
+            perProcess.appId = module.appId;
+            perProcess.apkPath = module.apkPath;
+            perProcess.applicationInfo = module.applicationInfo;
+            perProcess.service = module.service;
+            perProcess.file = snapshot.file;
+            var ref = new ProcessRef(process.uid, process.pid, process.processName);
+            if (!sReloadingTargets.add(ref)) continue;
+            hotReloadExecutor.execute(() -> {
+                try {
+                    callback.hotReload(perProcess, null);
+                } catch (Throwable t) {
+                    Log.w(TAG, "auto hot reload failed for " + packageName, t);
+                } finally {
+                    sReloadingTargets.remove(ref);
+                }
+            });
+        }
+    }
+
+    @Nullable
+    private static Module findModuleForProcess(String packageName, int uid, String processName) {
+        var config = ConfigManager.getInstance();
+        var modules = (uid == Process.SYSTEM_UID && "system".equals(processName))
+                ? config.getModulesForSystemServer()
+                : config.getModulesForProcess(processName, uid);
+        if (modules == null) return null;
+        for (var module : modules) {
+            if (Objects.equals(module.packageName, packageName)) return module;
+        }
+        return null;
     }
 
     private boolean isModuleInjected(ConfigManager config, int uid, String processName) {
