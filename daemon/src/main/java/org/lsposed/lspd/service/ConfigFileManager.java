@@ -433,6 +433,11 @@ public class ConfigFileManager {
         return result;
     }
 
+    // The first libxposed API version that used the modern module layout. A module is treated as
+    // modern when it targets at least this version; the framework keeps loading older modern
+    // targets even after its own API version (LSPModuleService.XPOSED_API_VERSION) advances.
+    static final int MIN_MODERN_API_VERSION = 100;
+
     static Properties readModernModuleProperties(ZipFile apkFile) {
         if (apkFile.getEntry("META-INF/xposed/java_init.list") == null) return null;
         var properties = readModuleProperties(apkFile);
@@ -440,7 +445,7 @@ public class ConfigFileManager {
         int minApiVersion = readApiVersion(properties, "minApiVersion");
         int targetApiVersion = readApiVersion(properties, "targetApiVersion");
         if (minApiVersion > LSPModuleService.XPOSED_API_VERSION) return null;
-        if (targetApiVersion < LSPModuleService.XPOSED_API_VERSION) return null;
+        if (targetApiVersion < MIN_MODERN_API_VERSION) return null;
         return properties;
     }
 
@@ -450,7 +455,7 @@ public class ConfigFileManager {
         int minApiVersion = readApiVersion(properties, "minApiVersion");
         int targetApiVersion = readApiVersion(properties, "targetApiVersion");
         return minApiVersion > LSPModuleService.XPOSED_API_VERSION
-                || targetApiVersion >= LSPModuleService.XPOSED_API_VERSION;
+                || targetApiVersion >= MIN_MODERN_API_VERSION;
     }
 
     private static boolean isExceptionPassthrough(Properties properties) {
@@ -480,7 +485,7 @@ public class ConfigFileManager {
             if (properties != null && readApiVersion(properties, "minApiVersion") > LSPModuleService.XPOSED_API_VERSION) {
                 return null;
             }
-            if (properties != null && readApiVersion(properties, "targetApiVersion") >= LSPModuleService.XPOSED_API_VERSION) {
+            if (properties != null && readApiVersion(properties, "targetApiVersion") >= MIN_MODERN_API_VERSION) {
                 file.legacy = false;
                 readName(apkFile, "META-INF/xposed/java_init.list", moduleClassNames);
                 readName(apkFile, "META-INF/xposed/native_init.list", moduleLibraryNames);
