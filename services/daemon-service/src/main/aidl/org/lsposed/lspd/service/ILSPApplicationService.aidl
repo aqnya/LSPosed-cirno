@@ -10,4 +10,6 @@ interface ILSPApplicationService {
     String getPrefsPath(String packageName);
 
     ParcelFileDescriptor requestInjectedManagerBinder(out List<IBinder> binder);
+
+    void registerHotReloadCallback(ILSPHotReloadCallback callback);
 }

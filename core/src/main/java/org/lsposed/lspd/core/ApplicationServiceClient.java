@@ -26,8 +26,10 @@ import android.os.RemoteException;
 
 import androidx.annotation.NonNull;
 
+import org.lsposed.lspd.impl.LSPosedHotReloadCallback;
 import org.lsposed.lspd.models.Module;
 import org.lsposed.lspd.service.ILSPApplicationService;
+import org.lsposed.lspd.service.ILSPHotReloadCallback;
 import org.lsposed.lspd.util.Utils;
 
 import java.util.Collections;
@@ -51,6 +53,7 @@ public class ApplicationServiceClient implements ILSPApplicationService, IBinder
         if (serviceClient == null && binder != null) {
             try {
                 serviceClient = new ApplicationServiceClient(service, niceName);
+                serviceClient.registerHotReloadCallback(new LSPosedHotReloadCallback());
             } catch (RemoteException e) {
                 Utils.logE("link to death error: ", e);
             }
@@ -91,6 +94,14 @@ public class ApplicationServiceClient implements ILSPApplicationService, IBinder
         } catch (RemoteException | NullPointerException ignored) {
         }
         return null;
+    }
+
+    @Override
+    public void registerHotReloadCallback(ILSPHotReloadCallback callback) {
+        try {
+            service.registerHotReloadCallback(callback);
+        } catch (RemoteException | NullPointerException ignored) {
+        }
     }
 
     @Override

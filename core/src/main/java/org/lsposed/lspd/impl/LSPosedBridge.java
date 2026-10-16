@@ -13,10 +13,12 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -35,6 +37,12 @@ public class LSPosedBridge {
      */
     private static final WeakHashMap<XposedInterface, ConcurrentHashMap<Executable, ConcurrentHashMap<String, HookHandleImpl>>> sHooksById =
             new WeakHashMap<>();
+
+    /**
+     * Live hook handles created through {@link XposedInterface.HookBuilder}, per module. Used to
+     * hand the previous generation's handles to the new generation during hot reload.
+     */
+    private static final WeakHashMap<XposedInterface, Set<HookHandleImpl>> sLiveHandles = new WeakHashMap<>();
 
     private static final Method getCause;
 
@@ -454,6 +462,7 @@ public class LSPosedBridge {
                 if (!valid) return;
                 valid = false;
                 HookBridge.unhookMethod(executable, hooker);
+                untrackHandle(context, this);
                 if (id != null) {
                     var byId = hooksOf(context).get(executable);
                     if (byId != null) {
@@ -482,7 +491,9 @@ public class LSPosedBridge {
                     throw new HookFailedError("Cannot replace hook " + executable);
                 }
                 valid = false;
+                untrackHandle(context, this);
                 var newHandle = new HookHandleImpl(context, executable, priority, exceptionMode, id, newHooker);
+                trackHandle(context, newHandle);
                 if (id != null) {
                     hooksOf(context).computeIfAbsent(executable, k -> new ConcurrentHashMap<>()).put(id, newHandle);
                 }
@@ -632,6 +643,38 @@ public class LSPosedBridge {
         }
     }
 
+    private static void trackHandle(XposedInterface context, HookHandleImpl handle) {
+        if (context == null) return;
+        synchronized (sLiveHandles) {
+            sLiveHandles.computeIfAbsent(context, k -> ConcurrentHashMap.newKeySet()).add(handle);
+        }
+    }
+
+    private static void untrackHandle(XposedInterface context, HookHandleImpl handle) {
+        if (context == null) return;
+        synchronized (sLiveHandles) {
+            var handles = sLiveHandles.get(context);
+            if (handles != null) handles.remove(handle);
+        }
+    }
+
+    /**
+     * Returns a snapshot of the live hook handles created by the given module generation.
+     */
+    static List<XposedInterface.HookHandle> captureHandles(XposedInterface context) {
+        synchronized (sLiveHandles) {
+            var handles = sLiveHandles.get(context);
+            if (handles == null) return Collections.emptyList();
+            return new ArrayList<XposedInterface.HookHandle>(handles);
+        }
+    }
+
+    private static void checkNotFrozen(XposedInterface context) {
+        if (context instanceof LSPosedContext ctx && ctx.isFrozen()) {
+            throw new IllegalStateException("The module generation is frozen for hot reload");
+        }
+    }
+
     static HookHandleImpl doHook(
             XposedInterface context,
             Executable hookMethod,
@@ -645,7 +688,9 @@ public class LSPosedBridge {
         }
         validateHookTarget(hookMethod);
         if (HookBridge.hookMethod(hookMethod, LSPosedBridge.NativeHooker.class, priority, hooker)) {
-            return new HookHandleImpl(context, hookMethod, priority, mode, id, hooker);
+            var handle = new HookHandleImpl(context, hookMethod, priority, mode, id, hooker);
+            trackHandle(context, handle);
+            return handle;
         }
         throw new HookFailedError("Cannot hook " + hookMethod);
     }
@@ -673,6 +718,7 @@ public class LSPosedBridge {
                 throw new HookFailedError("Cannot hook " + hookMethod);
             }
             var handle = new HookHandleImpl(context, hookMethod, priority, mode, id, hooker);
+            trackHandle(context, handle);
             byId.put(id, handle);
             return handle;
         }
@@ -695,6 +741,7 @@ public class LSPosedBridge {
             XposedInterface.ExceptionMode defaultExceptionMode
     ) {
         Objects.requireNonNull(executable, "origin must not be null");
+        checkNotFrozen(context);
         return new HookBuilderImpl(context, executable, defaultExceptionMode);
     }
 
@@ -704,6 +751,7 @@ public class LSPosedBridge {
             XposedInterface.ExceptionMode defaultExceptionMode
     ) {
         Objects.requireNonNull(clazz, "origin must not be null");
+        checkNotFrozen(context);
         if (clazz.getClassLoader() == LSPosedContext.class.getClassLoader()) {
             throw new IllegalArgumentException("Do not allow hooking inner classes");
         }

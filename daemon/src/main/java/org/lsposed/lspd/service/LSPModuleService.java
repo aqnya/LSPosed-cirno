@@ -25,6 +25,7 @@ import android.content.AttributionSource;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.DeadObjectException;
 import android.os.ParcelFileDescriptor;
 import android.os.Process;
 import android.os.RemoteException;
@@ -69,6 +70,10 @@ public class LSPModuleService extends IXposedService.Stub {
     // API 102: opaque target ids handed out by getRunningTargets() and expected back by hotReloadModule().
     private final static AtomicLong sNextTargetId = new AtomicLong(1);
     private final static Map<Long, ProcessRef> sTargets = new ConcurrentHashMap<>();
+    // Targets that currently have a hot reload in flight.
+    private final static Set<ProcessRef> sReloadingTargets = ConcurrentHashMap.newKeySet();
+    private final static ExecutorService hotReloadExecutor =
+            Executors.newSingleThreadExecutor(r -> new Thread(r, "module-hot-reload"));
 
     static final int XPOSED_API_VERSION = XposedInterface.LIB_API;
 
@@ -85,6 +90,7 @@ public class LSPModuleService extends IXposedService.Stub {
         sentBinderSet.clear();
         sendingBinderSet.clear();
         sTargets.clear();
+        sReloadingTargets.clear();
     }
 
     static void uidStarts(int uid) {
@@ -98,6 +104,7 @@ public class LSPModuleService extends IXposedService.Stub {
         sentBinderSet.removeIf(k -> k.uid == uid);
         sendingBinderSet.removeIf(k -> k.uid == uid);
         sTargets.entrySet().removeIf(e -> e.getValue().uid() == uid);
+        sReloadingTargets.removeIf(ref -> ref.uid() == uid);
     }
 
     static void sendBindersForRunningModules() {
@@ -344,16 +351,79 @@ public class LSPModuleService extends IXposedService.Stub {
         }
         var config = ConfigManager.getInstance();
         // The target must still be alive, still injected, and still belong to this module.
-        var alive = LSPApplicationService.getRunningProcesses().stream()
-                .anyMatch(p -> p.uid == ref.uid() && p.pid == ref.pid());
-        if (!alive || !isModuleInjected(config, ref.uid(), ref.processName())) {
+        var processInfo = LSPApplicationService.getProcess(ref.uid(), ref.pid());
+        if (processInfo == null || !isModuleInjected(config, ref.uid(), ref.processName())) {
             sTargets.remove(targetId);
             throw new SecurityException("Invalid or expired target");
         }
-        // LSPosed does not currently stage a new module generation for a live process, which the
-        // API explicitly allows frameworks to report as unsupported.
-        callback.onHotReloadResult(IXposedService.HOT_RELOAD_UNSUPPORTED,
-                "Hot reload is not supported by this framework");
+        var hotReloadCallback = processInfo.hotReloadCallback;
+        if (hotReloadCallback == null) {
+            callback.onHotReloadResult(IXposedService.HOT_RELOAD_UNSUPPORTED,
+                    "The target process does not support hot reload");
+            return;
+        }
+        if (!sReloadingTargets.add(ref)) {
+            callback.onHotReloadResult(IXposedService.HOT_RELOAD_IN_PROGRESS, null);
+            return;
+        }
+        var module = moduleSnapshotForReload();
+        if (module == null) {
+            sReloadingTargets.remove(ref);
+            callback.onHotReloadResult(IXposedService.HOT_RELOAD_UNSUPPORTED,
+                    "The module is not hot-reloadable");
+            return;
+        }
+        // Reloading blocks on module code, so run it off the binder thread. The result is reported
+        // asynchronously through the client callback.
+        hotReloadExecutor.execute(() -> {
+            var status = IXposedService.HOT_RELOAD_FAILED;
+            String message = null;
+            try {
+                var result = hotReloadCallback.hotReload(module, data);
+                if (result != null) {
+                    status = result.getInt("status", IXposedService.HOT_RELOAD_FAILED);
+                    message = result.getString("message");
+                } else {
+                    status = IXposedService.HOT_RELOAD_UNSUPPORTED;
+                }
+            } catch (DeadObjectException e) {
+                status = IXposedService.HOT_RELOAD_PROCESS_DIED;
+            } catch (RemoteException e) {
+                status = IXposedService.HOT_RELOAD_PROCESS_DIED;
+            } catch (Throwable t) {
+                status = IXposedService.HOT_RELOAD_FAILED;
+                message = t.toString();
+            } finally {
+                sReloadingTargets.remove(ref);
+            }
+            try {
+                callback.onHotReloadResult(status, message);
+            } catch (RemoteException ignored) {
+            }
+        });
+    }
+
+    /**
+     * Builds a fresh snapshot of the module as currently installed on disk, or {@code null} when
+     * the module cannot be hot-reloaded.
+     */
+    @Nullable
+    private Module moduleSnapshotForReload() {
+        try {
+            var file = ConfigFileManager.loadModule(loadedModule.apkPath, ConfigManager.getInstance().dexObfuscate());
+            if (file == null || file.legacy || file.moduleClassNames.size() != 1) return null;
+            var module = new Module();
+            module.packageName = loadedModule.packageName;
+            module.appId = loadedModule.appId;
+            module.apkPath = loadedModule.apkPath;
+            module.applicationInfo = loadedModule.applicationInfo;
+            module.service = loadedModule.service;
+            module.file = file;
+            return module;
+        } catch (Throwable t) {
+            Log.w(TAG, "failed to snapshot module for hot reload", t);
+            return null;
+        }
     }
 
     private boolean isModuleInjected(ConfigManager config, int uid, String processName) {
@@ -373,7 +443,17 @@ public class LSPModuleService extends IXposedService.Stub {
     private long loadedModuleVersionCode() {
         var info = loadedModule.applicationInfo;
         if (info == null) return 0L;
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? info.longVersionCode : info.versionCode;
+        // versionCode / longVersionCode are absent from the hidden-API compile stubs, so read them
+        // reflectively. The runtime ApplicationInfo always exposes them.
+        try {
+            return info.getClass().getField("longVersionCode").getLong(info);
+        } catch (Throwable ignored) {
+        }
+        try {
+            return info.getClass().getField("versionCode").getInt(info);
+        } catch (Throwable ignored) {
+        }
+        return 0L;
     }
 
     @Override

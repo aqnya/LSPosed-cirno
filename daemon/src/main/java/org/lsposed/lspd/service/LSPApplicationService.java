@@ -52,6 +52,7 @@ public class LSPApplicationService extends ILSPApplicationService.Stub {
         final int pid;
         final String processName;
         final IBinder heartBeat;
+        volatile ILSPHotReloadCallback hotReloadCallback;
 
         ProcessInfo(int uid, int pid, String processName, IBinder heartBeat) throws RemoteException {
             this.uid = uid;
@@ -163,6 +164,15 @@ public class LSPApplicationService extends ILSPApplicationService.Stub {
      */
     static Collection<ProcessInfo> getRunningProcesses() {
         return new ArrayList<>(processes.values());
+    }
+
+    static ProcessInfo getProcess(int uid, int pid) {
+        return processes.get(new Pair<>(uid, pid));
+    }
+
+    @Override
+    public void registerHotReloadCallback(ILSPHotReloadCallback callback) throws RemoteException {
+        ensureRegistered().hotReloadCallback = callback;
     }
 
     @NonNull
