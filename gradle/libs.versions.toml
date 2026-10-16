@@ -1,6 +1,7 @@
 [versions]
-libxposedApi = "101.0.1"
-libxposedService = "101.0.0"
+libxposedApi = "102.0.0"
+libxposedService = "102.0.0"
+libxposedAnnotation = "1.0.0"
 agp = "9.2.1"
 kotlin = "2.2.20"
 nav = "2.9.8"
@@ -62,5 +63,6 @@ hiddenapibypass = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", vers
 libxposed-api = { module = "io.github.libxposed:api", version.ref = "libxposedApi" }
 libxposed-service = { module = "io.github.libxposed:service", version.ref = "libxposedService" }
 libxposed-interfaces = { module = "io.github.libxposed:interface", version.ref = "libxposedService" }
+libxposed-annotation = { module = "io.github.libxposed:annotation", version.ref = "libxposedAnnotation" }
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version = "1.11.0" }

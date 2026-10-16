@@ -83,6 +83,14 @@ public class LSPosedContext implements XposedInterface {
         }
     }
 
+    /**
+     * Stops the framework from delivering further lifecycle callbacks to the given module entry.
+     * Invoked by {@link XposedModule#detach()}.
+     */
+    public static void detachModule(XposedModule module) {
+        modules.remove(module);
+    }
+
     public static void callOnSystemServerStarting(XposedModuleInterface.SystemServerStartingParam param) {
         for (XposedModule module : modules) {
             try {
@@ -123,7 +131,7 @@ public class LSPosedContext implements XposedInterface {
                 }
                 try {
                     var moduleContext = (XposedModule) moduleClass.getConstructor().newInstance();
-                    moduleContext.attachFramework(ctx);
+                    moduleContext.attachFramework(ctx, () -> detachModule(moduleContext));
                     moduleContext.onModuleLoaded(new XposedModuleInterface.ModuleLoadedParam() {
                         @Override
                         public boolean isSystemServer() {

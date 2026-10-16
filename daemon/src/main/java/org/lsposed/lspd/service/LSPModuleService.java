@@ -26,11 +26,13 @@ import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
+import android.os.Process;
 import android.os.RemoteException;
 import android.util.ArrayMap;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.lsposed.daemon.BuildConfig;
 import org.lsposed.lspd.models.Module;
@@ -46,8 +48,11 @@ import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 import io.github.libxposed.api.XposedInterface;
+import io.github.libxposed.service.HookedProcess;
+import io.github.libxposed.service.IHotReloadCallback;
 import io.github.libxposed.service.IXposedScopeCallback;
 import io.github.libxposed.service.IXposedService;
 
@@ -61,9 +66,16 @@ public class LSPModuleService extends IXposedService.Stub {
     private final static Map<Module, LSPModuleService> serviceMap = Collections.synchronizedMap(new WeakHashMap<>());
     private final static ExecutorService binderExecutor = Executors.newSingleThreadExecutor(r -> new Thread(r, "module-binder-delivery"));
 
+    // API 102: opaque target ids handed out by getRunningTargets() and expected back by hotReloadModule().
+    private final static AtomicLong sNextTargetId = new AtomicLong(1);
+    private final static Map<Long, ProcessRef> sTargets = new ConcurrentHashMap<>();
+
     static final int XPOSED_API_VERSION = XposedInterface.LIB_API;
 
     public final static String FILES_DIR = "files";
+
+    private record ProcessRef(int uid, int pid, String processName) {
+    }
 
     private final @NonNull
     Module loadedModule;
@@ -72,6 +84,7 @@ public class LSPModuleService extends IXposedService.Stub {
         uidSet.clear();
         sentBinderSet.clear();
         sendingBinderSet.clear();
+        sTargets.clear();
     }
 
     static void uidStarts(int uid) {
@@ -84,6 +97,7 @@ public class LSPModuleService extends IXposedService.Stub {
         uidSet.remove(uid);
         sentBinderSet.removeIf(k -> k.uid == uid);
         sendingBinderSet.removeIf(k -> k.uid == uid);
+        sTargets.entrySet().removeIf(e -> e.getValue().uid() == uid);
     }
 
     static void sendBindersForRunningModules() {
@@ -296,6 +310,70 @@ public class LSPModuleService extends IXposedService.Stub {
         } catch (Throwable e) {
             throw new RemoteException(e.getMessage());
         }
+    }
+
+    @Override
+    public List<HookedProcess> getRunningTargets() throws RemoteException {
+        var userId = ensureModule();
+        var config = ConfigManager.getInstance();
+        var result = new ArrayList<HookedProcess>();
+        for (var process : LSPApplicationService.getRunningProcesses()) {
+            if (process.uid / PER_USER_RANGE != userId) continue;
+            if (!isModuleInjected(config, process.uid, process.processName)) continue;
+            var targetId = sNextTargetId.getAndIncrement();
+            sTargets.put(targetId, new ProcessRef(process.uid, process.pid, process.processName));
+            var hooked = new HookedProcess();
+            hooked.targetId = targetId;
+            hooked.uid = process.uid;
+            hooked.pid = process.pid;
+            hooked.processName = process.processName;
+            hooked.state = HookedProcess.TARGET_STATE_UP_TO_DATE;
+            hooked.loadedVersionCode = loadedModuleVersionCode();
+            result.add(hooked);
+        }
+        return result;
+    }
+
+    @Override
+    public void hotReloadModule(long targetId, @Nullable Bundle data, IHotReloadCallback callback) throws RemoteException {
+        ensureModule();
+        Objects.requireNonNull(callback, "callback cannot be null");
+        var ref = sTargets.get(targetId);
+        if (ref == null) {
+            throw new SecurityException("Invalid or expired target");
+        }
+        var config = ConfigManager.getInstance();
+        // The target must still be alive, still injected, and still belong to this module.
+        var alive = LSPApplicationService.getRunningProcesses().stream()
+                .anyMatch(p -> p.uid == ref.uid() && p.pid == ref.pid());
+        if (!alive || !isModuleInjected(config, ref.uid(), ref.processName())) {
+            sTargets.remove(targetId);
+            throw new SecurityException("Invalid or expired target");
+        }
+        // LSPosed does not currently stage a new module generation for a live process, which the
+        // API explicitly allows frameworks to report as unsupported.
+        callback.onHotReloadResult(IXposedService.HOT_RELOAD_UNSUPPORTED,
+                "Hot reload is not supported by this framework");
+    }
+
+    private boolean isModuleInjected(ConfigManager config, int uid, String processName) {
+        List<Module> modules;
+        if (uid == Process.SYSTEM_UID && "system".equals(processName)) {
+            modules = config.getModulesForSystemServer();
+        } else {
+            modules = config.getModulesForProcess(processName, uid);
+        }
+        if (modules == null) return false;
+        for (var module : modules) {
+            if (Objects.equals(module.packageName, loadedModule.packageName)) return true;
+        }
+        return false;
+    }
+
+    private long loadedModuleVersionCode() {
+        var info = loadedModule.applicationInfo;
+        if (info == null) return 0L;
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? info.longVersionCode : info.versionCode;
     }
 
     @Override

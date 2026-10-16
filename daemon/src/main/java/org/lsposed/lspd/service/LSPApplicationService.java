@@ -33,6 +33,8 @@ import androidx.annotation.NonNull;
 
 import org.lsposed.lspd.models.Module;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -154,6 +156,13 @@ public class LSPApplicationService extends ILSPApplicationService.Stub {
 
     public boolean hasRegister(int uid, int pid) {
         return processes.containsKey(new Pair<>(uid, pid));
+    }
+
+    /**
+     * Returns a snapshot of the currently alive injected processes.
+     */
+    static Collection<ProcessInfo> getRunningProcesses() {
+        return new ArrayList<>(processes.values());
     }
 
     @NonNull

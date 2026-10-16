@@ -3,6 +3,7 @@ package org.lsposed.lspd.impl;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.lsposed.lspd.nativebridge.HookBridge;
 
@@ -16,6 +17,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.error.HookFailedError;
@@ -25,6 +28,13 @@ public class LSPosedBridge {
     private static final String TAG = "LSPosed-Bridge";
     private static final String CAST_ERROR = "Return value's type from hook callback does not match the hooked method";
     private static final Object[] EMPTY_ARRAY = new Object[0];
+
+    /**
+     * Registry of hooks with an explicit id, isolated per module ({@link XposedInterface} instance).
+     * A new hook created with the same id on the same executable atomically replaces the old one.
+     */
+    private static final WeakHashMap<XposedInterface, ConcurrentHashMap<Executable, ConcurrentHashMap<String, HookHandleImpl>>> sHooksById =
+            new WeakHashMap<>();
 
     private static final Method getCause;
 
@@ -359,6 +369,7 @@ public class LSPosedBridge {
         private final XposedInterface.ExceptionMode defaultExceptionMode;
         private int priority = XposedInterface.PRIORITY_DEFAULT;
         private XposedInterface.ExceptionMode exceptionMode = XposedInterface.ExceptionMode.DEFAULT;
+        private String id = null;
 
         HookBuilderImpl(XposedInterface context, Executable executable,
                         XposedInterface.ExceptionMode defaultExceptionMode) {
@@ -381,23 +392,48 @@ public class LSPosedBridge {
 
         @NonNull
         @Override
+        public XposedInterface.HookBuilder setId(@Nullable String id) {
+            this.id = id;
+            return this;
+        }
+
+        @NonNull
+        @Override
         public XposedInterface.HookHandle intercept(@NonNull XposedInterface.Hooker hooker) {
-            if (exceptionMode == XposedInterface.ExceptionMode.PROTECTIVE
-                    || exceptionMode == XposedInterface.ExceptionMode.DEFAULT
-                    && defaultExceptionMode == XposedInterface.ExceptionMode.PROTECTIVE) {
+            Objects.requireNonNull(hooker, "hooker should not be null!");
+            var mode = resolveExceptionMode(exceptionMode, defaultExceptionMode);
+            if (mode == XposedInterface.ExceptionMode.PROTECTIVE) {
                 hooker = new ProtectiveHooker(context, hooker);
             }
-            return doHook(executable, priority, hooker);
+            if (id == null) {
+                return doHook(context, executable, priority, mode, null, hooker);
+            }
+            return doHookWithId(context, executable, priority, mode, id, hooker);
         }
     }
 
     static class HookHandleImpl implements XposedInterface.HookHandle {
+        private final XposedInterface context;
         private final Executable executable;
+        private final int priority;
+        private final XposedInterface.ExceptionMode exceptionMode;
+        private final String id;
         private final XposedInterface.Hooker hooker;
+        private volatile boolean valid = true;
 
-        HookHandleImpl(Executable executable, XposedInterface.Hooker hooker) {
+        HookHandleImpl(XposedInterface context, Executable executable, int priority,
+                       XposedInterface.ExceptionMode exceptionMode, String id,
+                       XposedInterface.Hooker hooker) {
+            this.context = context;
             this.executable = executable;
+            this.priority = priority;
+            this.exceptionMode = exceptionMode;
+            this.id = id;
             this.hooker = hooker;
+        }
+
+        boolean isValid() {
+            return valid;
         }
 
         @NonNull
@@ -406,9 +442,52 @@ public class LSPosedBridge {
             return executable;
         }
 
+        @Nullable
+        @Override
+        public String getId() {
+            return id;
+        }
+
         @Override
         public void unhook() {
-            HookBridge.unhookMethod(executable, hooker);
+            synchronized (executable) {
+                if (!valid) return;
+                valid = false;
+                HookBridge.unhookMethod(executable, hooker);
+                if (id != null) {
+                    var byId = hooksOf(context).get(executable);
+                    if (byId != null) {
+                        byId.remove(id, this);
+                    }
+                }
+            }
+        }
+
+        @NonNull
+        @Override
+        public XposedInterface.HookHandle replaceHook(@NonNull XposedInterface.Hooker newHooker) {
+            Objects.requireNonNull(newHooker, "hooker should not be null!");
+            synchronized (executable) {
+                if (!valid) {
+                    throw new IllegalStateException("This hook handle is no longer valid");
+                }
+                var oldHooker = hooker;
+                if (exceptionMode == XposedInterface.ExceptionMode.PROTECTIVE) {
+                    newHooker = new ProtectiveHooker(context, newHooker);
+                }
+                HookBridge.unhookMethod(executable, oldHooker);
+                if (!HookBridge.hookMethod(executable, NativeHooker.class, priority, newHooker)) {
+                    // Restore the previous hook so this handle stays usable.
+                    HookBridge.hookMethod(executable, NativeHooker.class, priority, oldHooker);
+                    throw new HookFailedError("Cannot replace hook " + executable);
+                }
+                valid = false;
+                var newHandle = new HookHandleImpl(context, executable, priority, exceptionMode, id, newHooker);
+                if (id != null) {
+                    hooksOf(context).computeIfAbsent(executable, k -> new ConcurrentHashMap<>()).put(id, newHandle);
+                }
+                return newHandle;
+            }
         }
     }
 
@@ -521,25 +600,93 @@ public class LSPosedBridge {
         }
     }
 
-    public static XposedInterface.HookHandle doHook(
-            Executable hookMethod,
-            int priority,
-            XposedInterface.Hooker hooker
+    private static XposedInterface.ExceptionMode resolveExceptionMode(
+            XposedInterface.ExceptionMode mode,
+            XposedInterface.ExceptionMode defaultMode
     ) {
+        if (mode == XposedInterface.ExceptionMode.PROTECTIVE) {
+            return XposedInterface.ExceptionMode.PROTECTIVE;
+        }
+        if (mode == XposedInterface.ExceptionMode.DEFAULT
+                && defaultMode == XposedInterface.ExceptionMode.PROTECTIVE) {
+            return XposedInterface.ExceptionMode.PROTECTIVE;
+        }
+        return XposedInterface.ExceptionMode.PASSTHROUGH;
+    }
+
+    private static void validateHookTarget(Executable hookMethod) {
         if (Modifier.isAbstract(hookMethod.getModifiers())) {
             throw new IllegalArgumentException("Cannot hook abstract methods: " + hookMethod);
         } else if (hookMethod.getDeclaringClass().getClassLoader() == LSPosedContext.class.getClassLoader()) {
             throw new IllegalArgumentException("Do not allow hooking inner methods");
         } else if (hookMethod.getDeclaringClass() == Method.class && hookMethod.getName().equals("invoke")) {
             throw new IllegalArgumentException("Cannot hook Method.invoke");
-        } else if (hooker == null) {
+        }
+    }
+
+    private static ConcurrentHashMap<Executable, ConcurrentHashMap<String, HookHandleImpl>> hooksOf(
+            XposedInterface context
+    ) {
+        synchronized (sHooksById) {
+            return sHooksById.computeIfAbsent(context, k -> new ConcurrentHashMap<>());
+        }
+    }
+
+    static HookHandleImpl doHook(
+            XposedInterface context,
+            Executable hookMethod,
+            int priority,
+            XposedInterface.ExceptionMode mode,
+            String id,
+            XposedInterface.Hooker hooker
+    ) {
+        if (hooker == null) {
             throw new IllegalArgumentException("hooker should not be null!");
         }
-
+        validateHookTarget(hookMethod);
         if (HookBridge.hookMethod(hookMethod, LSPosedBridge.NativeHooker.class, priority, hooker)) {
-            return new HookHandleImpl(hookMethod, hooker);
+            return new HookHandleImpl(context, hookMethod, priority, mode, id, hooker);
         }
         throw new HookFailedError("Cannot hook " + hookMethod);
+    }
+
+    private static HookHandleImpl doHookWithId(
+            XposedInterface context,
+            Executable hookMethod,
+            int priority,
+            XposedInterface.ExceptionMode mode,
+            String id,
+            XposedInterface.Hooker hooker
+    ) {
+        synchronized (hookMethod) {
+            if (hooker == null) {
+                throw new IllegalArgumentException("hooker should not be null!");
+            }
+            validateHookTarget(hookMethod);
+            var byId = hooksOf(context).computeIfAbsent(hookMethod, k -> new ConcurrentHashMap<>());
+            var old = byId.get(id);
+            if (old != null && old.isValid()) {
+                // unhook() removes itself from byId and marks the old handle invalid.
+                old.unhook();
+            }
+            if (!HookBridge.hookMethod(hookMethod, LSPosedBridge.NativeHooker.class, priority, hooker)) {
+                throw new HookFailedError("Cannot hook " + hookMethod);
+            }
+            var handle = new HookHandleImpl(context, hookMethod, priority, mode, id, hooker);
+            byId.put(id, handle);
+            return handle;
+        }
+    }
+
+    public static XposedInterface.HookHandle doHook(
+            Executable hookMethod,
+            int priority,
+            XposedInterface.Hooker hooker
+    ) {
+        if (hooker == null) {
+            throw new IllegalArgumentException("hooker should not be null!");
+        }
+        return doHook(null, hookMethod, priority, XposedInterface.ExceptionMode.PASSTHROUGH, null, hooker);
     }
 
     public static XposedInterface.HookBuilder newHookBuilder(
