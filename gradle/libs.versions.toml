@@ -1,4 +1,6 @@
 [versions]
+libxposedApi = "101.0.1"
+libxposedService = "101.0.0"
 agp = "9.2.1"
 kotlin = "2.2.20"
 nav = "2.9.8"
@@ -57,5 +59,8 @@ commons-lang3 = { module = "org.apache.commons:commons-lang3", version = "3.20.0
 material = { module = "com.google.android.material:material", version = "1.12.0" }
 gson = { module = "com.google.code.gson:gson", version = "2.14.0" }
 hiddenapibypass = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", version = "6.1" }
+libxposed-api = { module = "io.github.libxposed:api", version.ref = "libxposedApi" }
+libxposed-service = { module = "io.github.libxposed:service", version.ref = "libxposedService" }
+libxposed-interfaces = { module = "io.github.libxposed:interface", version.ref = "libxposedService" }
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version = "1.11.0" }
