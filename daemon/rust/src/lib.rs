@@ -28,6 +28,8 @@ use std::ffi::{c_char, c_int, c_void, CString};
 use std::io;
 use std::ptr;
 
+mod logcat;
+
 const LOG_TAG: &[u8] = b"LSPosedDex2Oat\0";
 const ANDROID_LOG_INFO: c_int = 4;
 const ANDROID_LOG_ERROR: c_int = 6;

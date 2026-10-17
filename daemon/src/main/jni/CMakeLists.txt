@@ -4,7 +4,6 @@ project(daemon)
 add_subdirectory(${EXTERNAL_ROOT} external)
 
 set(SOURCES
-        logcat.cpp
         obfuscation.cpp
         )
 
