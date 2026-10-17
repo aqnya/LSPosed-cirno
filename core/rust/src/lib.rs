@@ -29,6 +29,7 @@ mod class_loader;
 mod context_hooks;
 mod elf_util;
 mod preloaded_dex;
+mod symbol_cache;
 
 #[cfg(target_os = "android")]
 mod native_api;

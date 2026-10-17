@@ -43,6 +43,9 @@ namespace SandHook {
     public:
         explicit ElfImg(std::string_view elf);
 
+        // Adopt an existing Rust ElfHandle without taking ownership.
+        explicit ElfImg(void *handle) : handle_(handle), owned_(false) {}
+
         ~ElfImg();
 
         ElfImg(const ElfImg &) = delete;
@@ -89,13 +92,14 @@ namespace SandHook {
 
     private:
         void *handle_ = nullptr;
+        bool owned_ = true;
     };
 
     inline ElfImg::ElfImg(std::string_view elf)
             : handle_(lspd_elf_create(elf.data(), elf.size())) {}
 
     inline ElfImg::~ElfImg() {
-        lspd_elf_destroy(handle_);
+        if (owned_) lspd_elf_destroy(handle_);
     }
 }
 

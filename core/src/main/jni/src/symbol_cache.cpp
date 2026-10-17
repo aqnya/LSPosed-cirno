@@ -24,30 +24,32 @@
 
 #include "symbol_cache.h"
 #include "elf_util.h"
-#include <dobby.h>
-#include "macros.h"
-#include "config.h"
-#include <vector>
-#include <logging.h>
+
+extern "C" void *lspd_symbol_cache_get_art();
+extern "C" void lspd_symbol_cache_release_art();
+extern "C" void *lspd_symbol_cache_get_binder();
+extern "C" void lspd_symbol_cache_release_binder();
 
 namespace lspd {
     std::unique_ptr<const SandHook::ElfImg> &GetArt(bool release) {
-        static std::unique_ptr<const SandHook::ElfImg> kArtImg = nullptr;
+        static std::unique_ptr<const SandHook::ElfImg> image = nullptr;
         if (release) {
-            kArtImg.reset();
-        } else if (!kArtImg) {
-            kArtImg = std::make_unique<SandHook::ElfImg>(kLibArtName);
+            image.reset();
+            lspd_symbol_cache_release_art();
+        } else if (!image) {
+            image = std::make_unique<const SandHook::ElfImg>(lspd_symbol_cache_get_art());
         }
-        return kArtImg;
+        return image;
     }
 
     std::unique_ptr<const SandHook::ElfImg> &GetLibBinder(bool release) {
-        static std::unique_ptr<const SandHook::ElfImg> kImg = nullptr;
+        static std::unique_ptr<const SandHook::ElfImg> image = nullptr;
         if (release) {
-            kImg.reset();
-        } else if (!kImg) {
-            kImg = std::make_unique<SandHook::ElfImg>(kLibBinderName);
+            image.reset();
+            lspd_symbol_cache_release_binder();
+        } else if (!image) {
+            image = std::make_unique<const SandHook::ElfImg>(lspd_symbol_cache_get_binder());
         }
-        return kImg;
+        return image;
     }
 }  // namespace lspd
