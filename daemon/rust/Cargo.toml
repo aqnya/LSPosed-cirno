@@ -1,0 +1,21 @@
+[package]
+name = "daemon-native"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+publish = false
+
+[lib]
+name = "daemon_rust"
+crate-type = ["cdylib"]
+
+[dependencies]
+jni = "0.21"
+libc = "0.2"
+
+[profile.release]
+strip = false
+debug = true
+panic = "abort"
+opt-level = "z"
+lto = true

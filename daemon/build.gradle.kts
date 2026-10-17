@@ -36,6 +36,7 @@ val injectedPackageUid: Int by rootProject.extra
 val agpVersion: String by project
 
 val defaultManagerPackageName: String by rootProject.extra
+val androidMinSdkVersion: Int by rootProject.extra
 
 android {
     buildFeatures {
@@ -75,7 +76,77 @@ android {
         }
     }
 
+    // Built by :daemon:buildRustDaemon; merged alongside the CMake-produced libdaemon.so.
+    sourceSets.getByName("main").jniLibs.srcDir(
+        layout.buildDirectory.dir("generated/rust/jniLibs").get().asFile
+    )
+
     namespace = "org.lsposed.daemon"
+}
+
+// Rust takeover of the daemon-side dex2oat JNI (mount/sockcreate/socket path).
+val rustNdkDirProvider = androidComponents.sdkComponents.ndkDirectory
+val rustAbiToTriple = linkedMapOf(
+    "arm64-v8a" to "aarch64-linux-android",
+    "armeabi-v7a" to "armv7-linux-androideabi",
+    "x86" to "i686-linux-android",
+    "x86_64" to "x86_64-linux-android",
+)
+
+val buildRustDaemon = tasks.register("buildRustDaemon") {
+    group = "rust"
+    doLast {
+        val ndkFile = rustNdkDirProvider.get().asFile
+        val prebuilt = File(ndkFile, "toolchains/llvm/prebuilt").listFiles()?.firstOrNull()
+            ?: error("NDK LLVM toolchain not found under $ndkFile")
+        val binDir = File(prebuilt, "bin")
+        val exeExt = if (prebuilt.name.contains("windows")) ".exe" else ""
+        val strip = File(binDir, "llvm-strip$exeExt")
+        val objcopy = File(binDir, "llvm-objcopy$exeExt")
+
+        val crateDir = File(projectDir, "rust")
+        val targetDir = layout.buildDirectory.dir("rust/target").get().asFile
+        val outJniDir = layout.buildDirectory.dir("generated/rust/jniLibs").get().asFile
+        val symbolDir = rootProject.layout.buildDirectory.dir("symbols/rust/daemon").get().asFile
+
+        val cargoArgs = mutableListOf("cargo", "ndk", "--platform", androidMinSdkVersion.toString())
+        rustAbiToTriple.keys.forEach { abi -> cargoArgs += listOf("-t", abi) }
+        cargoArgs += listOf("build", "--release", "--target-dir", targetDir.absolutePath)
+
+        providers.exec {
+            workingDir = crateDir
+            environment("ANDROID_NDK_HOME", ndkFile.absolutePath)
+            commandLine(cargoArgs)
+        }.result.get().assertNormalExitValue()
+
+        rustAbiToTriple.forEach { (abi, triple) ->
+            val built = File(targetDir, "$triple/release/libdaemon_rust.so")
+            if (!built.exists()) error("libdaemon_rust.so not found for $abi at $built")
+
+            val abiDir = File(outJniDir, abi).apply { mkdirs() }
+            val target = File(abiDir, "libdaemon_rust.so")
+            built.copyTo(target, overwrite = true)
+
+            val symbol = File(symbolDir, "$abi/libdaemon_rust.so.debug")
+            symbol.parentFile.mkdirs()
+            providers.exec {
+                workingDir = abiDir
+                commandLine(objcopy.absolutePath, "--only-keep-debug", target.name, symbol.absolutePath)
+            }.result.get().assertNormalExitValue()
+            providers.exec {
+                workingDir = abiDir
+                commandLine(strip.absolutePath, "--strip-all", target.name)
+            }.result.get().assertNormalExitValue()
+            providers.exec {
+                workingDir = abiDir
+                commandLine(objcopy.absolutePath, "--add-gnu-debuglink", symbol.absolutePath, target.name)
+            }.result.get().assertNormalExitValue()
+        }
+    }
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach {
+    dependsOn(buildRustDaemon)
 }
 
 abstract class GenerateSignInfoTask : DefaultTask() {

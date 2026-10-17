@@ -55,6 +55,7 @@ public class LogcatService implements Runnable {
         String classPath = System.getProperty("java.class.path");
         var abi = Process.is64Bit() ? Build.SUPPORTED_64_BIT_ABIS[0] : Build.SUPPORTED_32_BIT_ABIS[0];
         System.load(classPath + "!/lib/" + abi + "/" + System.mapLibraryName("daemon"));
+        System.load(classPath + "!/lib/" + abi + "/" + System.mapLibraryName("daemon_rust"));
         ConfigFileManager.moveLogDir();
 
         // Meizu devices set this prop and prevent debug logs from being recorded

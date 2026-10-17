@@ -4,7 +4,6 @@ project(daemon)
 add_subdirectory(${EXTERNAL_ROOT} external)
 
 set(SOURCES
-        dex2oat.cpp
         logcat.cpp
         obfuscation.cpp
         )
