@@ -21,6 +21,7 @@ import java.time.Instant
 
 plugins {
     alias(libs.plugins.agp.app)
+    alias(libs.plugins.kotlin)
     alias(libs.plugins.nav.safeargs)
     alias(libs.plugins.autoresconfig)
     alias(libs.plugins.materialthemebuilder)

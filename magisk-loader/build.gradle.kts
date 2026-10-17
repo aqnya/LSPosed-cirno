@@ -27,6 +27,7 @@ import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.agp.app)
+    alias(libs.plugins.kotlin)
     alias(libs.plugins.lsplugin.resopt)
 }
 
