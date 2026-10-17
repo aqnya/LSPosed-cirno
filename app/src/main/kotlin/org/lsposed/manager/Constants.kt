@@ -21,12 +21,15 @@
 package org.lsposed.manager
 
 import android.os.IBinder
+import org.lsposed.lspd.ILSPManagerService
 import org.lsposed.manager.receivers.LSPManagerServiceHolder
 
 object Constants {
     @JvmStatic
     fun setBinder(binder: IBinder): Boolean {
         LSPManagerServiceHolder.init(binder)
-        return LSPManagerServiceHolder.getService().asBinder().isBinderAlive()
+        val service: ILSPManagerService? = LSPManagerServiceHolder.getService()
+        val serviceBinder: IBinder? = service?.asBinder()
+        return serviceBinder?.isBinderAlive() == true
     }
 }
