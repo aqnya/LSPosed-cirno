@@ -138,7 +138,6 @@ androidComponents.onVariants(androidComponents.selector().all()) { variant ->
             "assemble$variantCapped",
             ":app:package$buildTypeCapped",
             ":daemon:package$buildTypeCapped",
-            ":dex2oat:externalNativeBuild${buildTypeCapped}",
             ":dex2oat:buildRust$buildTypeCapped"
         )
         into(magiskDir)
@@ -183,7 +182,7 @@ androidComponents.onVariants(androidComponents.selector().all()) { variant ->
             }
         }
         into("bin") {
-            from(project(":dex2oat").layout.buildDirectory.dir("intermediates/cmake/$buildTypeLowered/obj")) {
+            from(project(":dex2oat").layout.buildDirectory.dir("intermediates/rust/$buildTypeLowered/bin")) {
                 include("**/dex2oat")
             }
         }

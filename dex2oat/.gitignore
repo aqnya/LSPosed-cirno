@@ -1,4 +1,3 @@
 /build
-/.cxx
 /rust/Cargo.lock
 /rust/target

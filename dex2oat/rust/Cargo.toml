@@ -1,5 +1,5 @@
 [package]
-name = "preload"
+name = "dex2oat-native"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.77"
@@ -7,7 +7,15 @@ publish = false
 
 [lib]
 name = "preload"
+path = "src/lib.rs"
 crate-type = ["cdylib"]
+
+[[bin]]
+name = "dex2oat"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
 
 [profile.dev]
 strip = false
