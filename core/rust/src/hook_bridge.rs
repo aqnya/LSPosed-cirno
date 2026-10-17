@@ -26,20 +26,35 @@ use jni::sys::{
     JNI_TRUE,
 };
 use jni::{JNIEnv, NativeMethod};
+use arc_swap::ArcSwap;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::{c_char, c_void};
 use std::ptr;
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
+#[derive(Clone)]
 struct HookItem {
     backup: usize,
-    callbacks: BTreeMap<jint, Vec<GlobalRef>>,
+    callbacks: BTreeMap<jint, Vec<Arc<GlobalRef>>>,
 }
 
-static HOOKS: OnceLock<RwLock<HashMap<usize, HookItem>>> = OnceLock::new();
+type HookMap = HashMap<usize, Arc<HookItem>>;
 
-fn hooks() -> &'static RwLock<HashMap<usize, HookItem>> {
-    HOOKS.get_or_init(|| RwLock::new(HashMap::new()))
+static HOOKS: OnceLock<ArcSwap<HookMap>> = OnceLock::new();
+static WRITER: Mutex<()> = Mutex::new(());
+
+fn hooks() -> &'static ArcSwap<HookMap> {
+    HOOKS.get_or_init(|| ArcSwap::from_pointee(HashMap::new()))
+}
+
+fn update_hooks<F: FnOnce(&mut HookMap)>(update: F) {
+    let Ok(_writer) = WRITER.lock() else {
+        return;
+    };
+    let current = hooks().load();
+    let mut map = (**current).clone();
+    update(&mut map);
+    hooks().store(Arc::new(map));
 }
 
 extern "C" {
@@ -108,7 +123,7 @@ unsafe fn to_reflected_method<'local>(
     }
 }
 
-fn add_callback(item: &mut HookItem, priority: jint, callback: GlobalRef) {
+fn add_callback(item: &mut HookItem, priority: jint, callback: Arc<GlobalRef>) {
     item.callbacks.entry(priority).or_default().push(callback);
 }
 
@@ -132,17 +147,17 @@ pub extern "system" fn Java_org_lsposed_lspd_nativebridge_HookBridge_hookMethod(
     };
 
     let callback = match env.new_global_ref(&callback) {
-        Ok(callback) => callback,
+        Ok(callback) => Arc::new(callback),
         Err(_) => return JNI_FALSE,
     };
 
-    if let Ok(mut hooks) = hooks().write() {
-        if let Some(item) = hooks.get_mut(&target) {
-            add_callback(item, priority, callback);
-            return JNI_TRUE;
-        }
-    } else {
-        return JNI_FALSE;
+    if hooks().load().contains_key(&target) {
+        update_hooks(|map| {
+            if let Some(item) = map.get_mut(&target) {
+                add_callback(Arc::make_mut(item), priority, callback);
+            }
+        });
+        return JNI_TRUE;
     }
 
     // Never hold the registry lock while calling JNI/LSPlant: installing a
@@ -182,20 +197,20 @@ pub extern "system" fn Java_org_lsposed_lspd_nativebridge_HookBridge_hookMethod(
         return JNI_FALSE;
     }
 
-    let Ok(mut hooks) = hooks().write() else {
-        return JNI_FALSE;
-    };
-    if let Some(item) = hooks.get_mut(&target) {
-        // Another thread installed the same hook while we were outside the lock.
-        add_callback(item, priority, callback);
-        return JNI_TRUE;
-    }
-    let mut item = HookItem {
-        backup: backup as usize,
-        callbacks: BTreeMap::new(),
-    };
-    add_callback(&mut item, priority, callback);
-    hooks.insert(target, item);
+    let mut callback = Some(callback);
+    update_hooks(|map| {
+        if let Some(item) = map.get_mut(&target) {
+            // Another thread installed the same hook while we were outside the lock.
+            add_callback(Arc::make_mut(item), priority, callback.take().unwrap());
+        } else {
+            let mut item = HookItem {
+                backup: backup as usize,
+                callbacks: BTreeMap::new(),
+            };
+            add_callback(&mut item, priority, callback.take().unwrap());
+            map.insert(target, Arc::new(item));
+        }
+    });
     JNI_TRUE
 }
 
@@ -215,24 +230,23 @@ pub extern "system" fn Java_org_lsposed_lspd_nativebridge_HookBridge_unhookMetho
             None => return JNI_FALSE,
         }
     };
-    let mut hooks = match hooks().write() {
-        Ok(hooks) => hooks,
-        Err(_) => return JNI_FALSE,
-    };
-    let Some(item) = hooks.get_mut(&target) else {
-        return JNI_FALSE;
-    };
     let mut removed = false;
-    for callbacks in item.callbacks.values_mut() {
-        let position = callbacks
-            .iter()
-            .position(|saved| env.is_same_object(saved.as_obj(), &callback).unwrap_or(false));
-        if let Some(position) = position {
-            callbacks.remove(position);
-            removed = true;
-            break;
+    update_hooks(|map| {
+        let Some(item) = map.get_mut(&target) else {
+            return;
+        };
+        let item = Arc::make_mut(item);
+        for callbacks in item.callbacks.values_mut() {
+            let position = callbacks
+                .iter()
+                .position(|saved| env.is_same_object(saved.as_obj(), &callback).unwrap_or(false));
+            if let Some(position) = position {
+                callbacks.remove(position);
+                removed = true;
+                break;
+            }
         }
-    }
+    });
     if removed {
         JNI_TRUE
     } else {
@@ -271,14 +285,7 @@ pub extern "system" fn Java_org_lsposed_lspd_nativebridge_HookBridge_invokeOrigi
         }
     };
     let backup = {
-        let hooks = match hooks().read() {
-            Ok(hooks) => hooks,
-            Err(_) => return ptr::null_mut(),
-        };
-        hooks
-            .get(&target)
-            .map(|item| item.backup)
-            .unwrap_or(0)
+        hooks().load().get(&target).map(|item| item.backup).unwrap_or(0)
     };
     unsafe {
         lspd_hook_bridge_invoke_original(
@@ -420,10 +427,7 @@ pub extern "system" fn Java_org_lsposed_lspd_nativebridge_HookBridge_callbackSna
             None => return ptr::null_mut(),
         }
     };
-    let hooks = match hooks().read() {
-        Ok(hooks) => hooks,
-        Err(_) => return ptr::null_mut(),
-    };
+    let hooks = hooks().load();
     let Some(item) = hooks.get(&target) else {
         return empty_object_array(&mut env);
     };
