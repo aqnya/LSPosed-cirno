@@ -114,12 +114,14 @@ unsafe fn recv_fd(fd: c_int) -> Option<c_int> {
     };
     let fd_size = std::mem::size_of::<c_int>() as libc::c_uint;
     let control_len = libc::CMSG_SPACE(fd_size) as usize;
-    let mut control = vec![0u8; control_len];
+    // `cmsghdr` must be aligned; allocate in pointer-sized words instead of bytes.
+    let control_words = (control_len + std::mem::size_of::<usize>() - 1) / std::mem::size_of::<usize>();
+    let mut control = vec![0usize; control_words];
     let mut message: libc::msghdr = std::mem::zeroed();
-    message.msg_iov = &mut iov;
+    message.msg_iov = &mut iov as *mut _;
     message.msg_iovlen = 1;
     message.msg_control = control.as_mut_ptr() as *mut c_void;
-    message.msg_controllen = control.len();
+    message.msg_controllen = control_len;
 
     if libc::recvmsg(fd, &mut message as *mut _, libc::MSG_WAITALL) < 0 {
         log_error(&format!("recvmsg failed: {}", io::Error::last_os_error()));
@@ -131,7 +133,7 @@ unsafe fn recv_fd(fd: c_int) -> Option<c_int> {
         return None;
     }
     let header = &*header;
-    if message.msg_controllen != control.len()
+    if message.msg_controllen != control_len
         || header.cmsg_len != libc::CMSG_LEN(fd_size * count as libc::c_uint) as usize
         || header.cmsg_level != libc::SOL_SOCKET
         || header.cmsg_type != libc::SCM_RIGHTS
