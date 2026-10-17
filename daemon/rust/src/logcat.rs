@@ -298,11 +298,10 @@ struct Logcat<'local> {
 impl<'local> Logcat<'local> {
     fn refresh_fd(&mut self, verbose: bool) -> c_int {
         let result = (|| -> jni::errors::Result<c_int> {
-            let class = self.env.get_object_class(&self.thiz)?;
-            let method = self.env.get_method_id(&class, "refreshFd", "(Z)I")?;
             let value = self.env.call_method(
                 &self.thiz,
-                method,
+                "refreshFd",
+                "(Z)I",
                 &[JValue::Bool(if verbose { 1 } else { 0 })],
             )?;
             value.i()
@@ -508,7 +507,7 @@ impl<'local> Logcat<'local> {
 }
 
 fn format_line(entry: &AndroidLogEntry) -> Vec<u8> {
-    let mut seconds = entry.tv_sec;
+    let seconds = entry.tv_sec;
     let mut nanos = entry.tv_nsec;
     if seconds < 0 {
         nanos = NS_PER_SEC - nanos;
