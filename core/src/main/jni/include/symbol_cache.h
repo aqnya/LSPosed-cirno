@@ -26,14 +26,37 @@
 #define LSPOSED_SYMBOL_CACHE_H
 
 #include <memory>
+#include "elf_util.h"
 
-namespace SandHook {
-    class ElfImg;
+extern "C" {
+void *lspd_symbol_cache_get_art();
+void lspd_symbol_cache_release_art();
+void *lspd_symbol_cache_get_binder();
+void lspd_symbol_cache_release_binder();
 }
 
 namespace lspd {
-    std::unique_ptr<const SandHook::ElfImg> &GetArt(bool release=false);
-    std::unique_ptr<const SandHook::ElfImg> &GetLibBinder(bool release=false);
+    inline std::unique_ptr<const SandHook::ElfImg> &GetArt(bool release = false) {
+        static std::unique_ptr<const SandHook::ElfImg> image = nullptr;
+        if (release) {
+            image.reset();
+            lspd_symbol_cache_release_art();
+        } else if (!image) {
+            image = std::make_unique<const SandHook::ElfImg>(lspd_symbol_cache_get_art());
+        }
+        return image;
+    }
+
+    inline std::unique_ptr<const SandHook::ElfImg> &GetLibBinder(bool release = false) {
+        static std::unique_ptr<const SandHook::ElfImg> image = nullptr;
+        if (release) {
+            image.reset();
+            lspd_symbol_cache_release_binder();
+        } else if (!image) {
+            image = std::make_unique<const SandHook::ElfImg>(lspd_symbol_cache_get_binder());
+        }
+        return image;
+    }
 }
 
 #endif //LSPOSED_SYMBOL_CACHE_H
