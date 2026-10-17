@@ -10,9 +10,6 @@
 [submodule "external/cxx"]
 	path = external/cxx
 	url = https://github.com/topjohnwu/libcxx.git
-[submodule "external/xz-embedded"]
-	path = external/xz-embedded
-	url = https://github.com/tukaani-project/xz-embedded.git
 [submodule "external/system_properties"]
 	path = external/system_properties
 	url = https://github.com/topjohnwu/system_properties.git

@@ -58,7 +58,8 @@ This fork won't have.
 - [LSPosed](https://github.com/LSPosed/LSPosed): fork source
 - [aqnya](https://github.com/aqnya): Cirno fork maintainer
 - [EdXposed](https://github.com/ElderDrivers/EdXposed): LSPosed fork source
-- [xz_embedded](https://github.com/tukaani-project/xz-embedded):decompress debug_info section into stripped libraries
+- [goblin](https://github.com/m4b/goblin): ELF parsing in the Rust symbol resolver
+- [lzma-rs](https://github.com/gendx/lzma-rs): XZ decompression for `.gnu_debugdata`
 - [system_properties](https://github.com/topjohnwu/system_properties):switch properties access within LSPosed
 - ~[SandHook](https://github.com/ganyao114/SandHook/): ART hooking framework for SandHook variant~
 - ~[YAHFA](https://github.com/rk700/YAHFA): previous ART hooking framework~
