@@ -93,7 +93,7 @@ public class LogcatService implements Runnable {
         }
     }
 
-    private static native void flushLogs();
+    static native void flushLogs();
 
     private native void runLogcat();
 
