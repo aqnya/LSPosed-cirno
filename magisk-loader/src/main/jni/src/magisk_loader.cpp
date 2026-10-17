@@ -35,8 +35,9 @@ using namespace lsplant;
 
 static_assert(FS_IOC_SETFLAGS == LP_SELECT(0x40046602, 0x40086602));
 
+extern "C" void lspd_set_allow_unload(int unload);
+
 namespace lspd {
-    extern int *allowUnload;
     jboolean is_parasitic_manager = JNI_FALSE;
 
     constexpr int FIRST_ISOLATED_UID = 99000;
@@ -235,8 +236,6 @@ namespace lspd {
     }
 
     void MagiskLoader::setAllowUnload(bool unload) {
-        if (allowUnload) {
-            *allowUnload = unload ? 1 : 0;
-        }
+        lspd_set_allow_unload(unload ? 1 : 0);
     }
 }  // namespace lspd

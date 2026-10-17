@@ -27,3 +27,6 @@ mod elf_util;
 
 #[cfg(target_os = "android")]
 mod native_api;
+
+#[cfg(target_os = "android")]
+mod zygisk_main;
