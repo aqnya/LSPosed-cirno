@@ -30,6 +30,9 @@
 
 using namespace lsplant;
 
+extern "C" jclass lspd_find_class_from_loader(JNIEnv *env, jobject class_loader,
+                                               const char *class_name, size_t class_name_len);
+
 
 namespace lspd {
     std::unique_ptr<Context> Context::instance_;
@@ -80,25 +83,11 @@ namespace lspd {
     ScopedLocalRef<jclass>
     Context::FindClassFromLoader(JNIEnv *env, jobject class_loader,
                                  std::string_view class_name) {
-        if (class_loader == nullptr) return {env, nullptr};
-        static auto clz = JNI_NewGlobalRef(env,
-                                           JNI_FindClass(env, "dalvik/system/DexClassLoader"));
-        static jmethodID mid = JNI_GetMethodID(env, clz, "loadClass",
-                                               "(Ljava/lang/String;)Ljava/lang/Class;");
-        if (!mid) {
-            mid = JNI_GetMethodID(env, clz, "findClass",
-                                  "(Ljava/lang/String;)Ljava/lang/Class;");
+        auto clazz = reinterpret_cast<jclass>(lspd_find_class_from_loader(
+                env, class_loader, class_name.data(), class_name.size()));
+        if (!clazz) {
+            LOGE("Class {} not found", class_name);
         }
-        if (mid) [[likely]] {
-            auto target = JNI_CallObjectMethod(env, class_loader, mid,
-                                               JNI_NewStringUTF(env, class_name.data()));
-            if (target) {
-                return target;
-            }
-        } else {
-            LOGE("No loadClass/findClass method found");
-        }
-        LOGE("Class {} not found", class_name);
-        return {env, nullptr};
+        return {env, clazz};
     }
 }  // namespace lspd

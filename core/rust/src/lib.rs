@@ -23,6 +23,8 @@
 //! still C++ and is called through a small C ABI.
 
 mod atexit;
+#[cfg(target_os = "android")]
+mod class_loader;
 mod elf_util;
 mod preloaded_dex;
 
