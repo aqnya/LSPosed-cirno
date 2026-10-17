@@ -23,7 +23,6 @@
 #include "config.h"
 #include "context.h"
 #include "native_util.h"
-#include "jni/resources_hook.h"
 #include "symbol_cache.h"
 
 using namespace lsplant;
@@ -32,7 +31,6 @@ extern "C" jclass lspd_find_class_from_loader(JNIEnv *env, jobject class_loader,
                                                const char *class_name, size_t class_name_len);
 extern "C" void lspd_init_hooks(JNIEnv *env, jobject class_loader);
 extern "C" jboolean lspd_make_dex_file_trusted(JNIEnv *env, jobject cookie);
-extern "C" void lspd_register_resources_hook(JNIEnv *env);
 extern "C" void lspd_register_hook_bridge(JNIEnv *env);
 
 
@@ -65,10 +63,6 @@ namespace lspd {
 
 extern "C" jboolean lspd_make_dex_file_trusted(JNIEnv *env, jobject cookie) {
     return lsplant::MakeDexFileTrusted(env, cookie);
-}
-
-extern "C" void lspd_register_resources_hook(JNIEnv *env) {
-    lspd::RegisterResourcesHook(env);
 }
 
 extern "C" jobject lspd_get_current_class_loader() {
