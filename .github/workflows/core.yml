@@ -51,6 +51,19 @@ jobs:
           log-accepted-android-sdk-licenses: 'false'
           packages: ''
 
+      - name: Setup Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-linux-android
+          rustup target add armv7-linux-androideabi
+          rustup target add i686-linux-android
+          rustup target add x86_64-linux-android
+
+      - name: Install cargo-ndk
+        # dex2oat's libpreload.so is built from Rust with cargo-ndk.
+        run: cargo install cargo-ndk --locked
+
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:

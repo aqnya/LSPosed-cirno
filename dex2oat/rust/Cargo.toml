@@ -1,0 +1,21 @@
+[package]
+name = "preload"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+publish = false
+
+[lib]
+name = "preload"
+crate-type = ["cdylib"]
+
+[profile.dev]
+strip = false
+panic = "abort"
+
+[profile.release]
+strip = false
+debug = true
+panic = "abort"
+opt-level = "z"
+lto = true

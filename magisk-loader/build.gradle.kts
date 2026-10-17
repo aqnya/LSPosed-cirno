@@ -138,7 +138,8 @@ androidComponents.onVariants(androidComponents.selector().all()) { variant ->
             "assemble$variantCapped",
             ":app:package$buildTypeCapped",
             ":daemon:package$buildTypeCapped",
-            ":dex2oat:externalNativeBuild${buildTypeCapped}"
+            ":dex2oat:externalNativeBuild${buildTypeCapped}",
+            ":dex2oat:buildRust$buildTypeCapped"
         )
         into(magiskDir)
         from("${rootProject.projectDir}/README.md")
@@ -177,7 +178,7 @@ androidComponents.onVariants(androidComponents.selector().all()) { variant ->
             from(layout.buildDirectory.dir("intermediates/stripped_native_libs/$variantCapped/strip${variantCapped}DebugSymbols/out/lib")) {
                 include("**/liblspd.so")
             }
-            from(project(":dex2oat").layout.buildDirectory.dir("intermediates/cmake/$buildTypeLowered/obj")) {
+            from(project(":dex2oat").layout.buildDirectory.dir("intermediates/rust/$buildTypeLowered/jniLibs")) {
                 include("**/libpreload.so")
             }
         }
