@@ -28,7 +28,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
-import okio.Okio
+import okio.buffer
+import okio.sink
 import org.lsposed.manager.App
 import org.lsposed.manager.ConfigManager
 import java.io.File
@@ -117,7 +118,7 @@ object UpdateUtil {
                     return@withContext null
                 }
                 body.source().use { source ->
-                    Okio.buffer(Okio.sink(zip)).use { sink ->
+                    zip.sink().buffer().use { sink ->
                         sink.writeAll(source)
                     }
                 }
