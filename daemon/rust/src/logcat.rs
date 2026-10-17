@@ -284,6 +284,11 @@ impl Files {
         }
         self.write_modules(data);
     }
+
+    fn flush(&mut self) {
+        self.verbose.flush();
+        self.modules.flush();
+    }
 }
 
 struct Logcat<'local> {
@@ -449,6 +454,18 @@ impl<'local> Logcat<'local> {
         self.refresh(true);
         self.refresh(false);
         self.ensure_watchdog();
+
+        // Keep the buffered log files reasonably fresh without flushing on
+        // every line. A process kill should lose at most this interval.
+        let files = self.files.clone();
+        let _ = std::thread::Builder::new()
+            .name("logcat-flush".into())
+            .spawn(move || loop {
+                std::thread::sleep(Duration::from_millis(500));
+                if let Ok(mut files) = files.lock() {
+                    files.flush();
+                }
+            });
 
         let mut tail: c_uint = 0;
         loop {
