@@ -15,6 +15,7 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -198,7 +199,7 @@ public class LSPosedBridge {
                 return invokeOriginal(method, thisObject, args, isConstructor);
             }
 
-            var chain = new ChainImpl<>(method, returnType, hookers, thisObject, args, false, isConstructor);
+            var chain = ChainImpl.obtain(method, returnType, hookers, thisObject, args, false, isConstructor);
             try {
                 return chain.proceed();
             } finally {
@@ -248,34 +249,63 @@ public class LSPosedBridge {
     }
 
     static class ChainImpl<T extends Executable> implements XposedInterface.Chain {
+        private static final int MAX_POOL_SIZE = 8;
+        private static final ThreadLocal<ArrayDeque<ChainImpl<?>>> POOL =
+                ThreadLocal.withInitial(ArrayDeque::new);
+
         // Thread identity is enough to enforce the same-thread rule; avoids a JNI gettid() call
         // on every interception.
-        private final Thread thread = Thread.currentThread();
-        private final T executable;
-        private final Class<?> returnType;
-        private final XposedInterface.Hooker[] hookers;
-        private final boolean special;
-        private final boolean isConstructor;
+        private final Thread thread;
+        private T executable;
+        private Class<?> returnType;
+        private XposedInterface.Hooker[] hookers;
+        private boolean special;
+        private boolean isConstructor;
         private int index = -1;
         private boolean active = true;
         private Object thisObject;
-        private Object[] args;
+        private Object[] args = EMPTY_ARRAY;
         private Object[] argsListViewSource;
         private List<Object> argsListView;
 
-        ChainImpl(T executable, Class<?> returnType, XposedInterface.Hooker[] hookers,
-                  Object thisObject, Object[] args, boolean special, boolean isConstructor) {
-            this.executable = executable;
-            this.returnType = returnType;
-            this.hookers = hookers == null ? EMPTY_HOOKERS : hookers;
-            this.thisObject = thisObject;
-            this.args = args == null ? EMPTY_ARRAY : args;
-            this.special = special;
-            this.isConstructor = isConstructor;
+        private ChainImpl() {
+            this.thread = Thread.currentThread();
+        }
+
+        @SuppressWarnings("unchecked")
+        static <T extends Executable> ChainImpl<T> obtain(
+                T executable, Class<?> returnType, XposedInterface.Hooker[] hookers,
+                Object thisObject, Object[] args, boolean special, boolean isConstructor) {
+            var pool = POOL.get();
+            var chain = (ChainImpl<T>) (pool.isEmpty() ? new ChainImpl<T>() : pool.pop());
+            chain.executable = executable;
+            chain.returnType = returnType;
+            chain.hookers = hookers == null ? EMPTY_HOOKERS : hookers;
+            chain.thisObject = thisObject;
+            chain.args = args == null ? EMPTY_ARRAY : args;
+            chain.special = special;
+            chain.isConstructor = isConstructor;
+            chain.index = -1;
+            chain.active = true;
+            chain.argsListViewSource = null;
+            chain.argsListView = null;
+            return chain;
         }
 
         void close() {
+            if (!active) return;
             active = false;
+            executable = null;
+            returnType = null;
+            hookers = EMPTY_HOOKERS;
+            thisObject = null;
+            args = EMPTY_ARRAY;
+            argsListViewSource = null;
+            argsListView = null;
+            var pool = POOL.get();
+            if (pool.size() < MAX_POOL_SIZE) {
+                pool.push(this);
+            }
         }
 
         private void checkActive() {
@@ -669,7 +699,7 @@ public class LSPosedBridge {
         Object invokeChain(Object thisObject, Object[] args, int maxPriority, boolean special)
                 throws InvocationTargetException, IllegalAccessException {
             var hookers = hookersOf(executable, maxPriority);
-            var chain = new ChainImpl<>(executable, returnType, hookers, thisObject, args, special, isConstructor);
+            var chain = ChainImpl.obtain(executable, returnType, hookers, thisObject, args, special, isConstructor);
             try {
                 return chain.proceed();
             } catch (Error | RuntimeException | InvocationTargetException | IllegalAccessException e) {
