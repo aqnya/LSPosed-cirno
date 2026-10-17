@@ -23,6 +23,7 @@
 #include "config.h"
 #include "context.h"
 #include "native_util.h"
+#include "jni/hook_bridge.h"
 #include "jni/resources_hook.h"
 #include "symbol_cache.h"
 
@@ -69,6 +70,10 @@ extern "C" jboolean lspd_make_dex_file_trusted(JNIEnv *env, jobject cookie) {
 
 extern "C" void lspd_register_resources_hook(JNIEnv *env) {
     lspd::RegisterResourcesHook(env);
+}
+
+extern "C" void lspd_register_hook_bridge(JNIEnv *env) {
+    lspd::RegisterHookBridge(env);
 }
 
 extern "C" jobject lspd_get_current_class_loader() {
