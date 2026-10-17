@@ -185,8 +185,12 @@ public class LSPosedBridge {
                 args = rawArgs;
             } else {
                 thisObject = rawArgs[0];
-                args = new Object[rawArgs.length - 1];
-                System.arraycopy(rawArgs, 1, args, 0, args.length);
+                if (rawArgs.length == 1) {
+                    args = EMPTY_ARRAY;
+                } else {
+                    args = new Object[rawArgs.length - 1];
+                    System.arraycopy(rawArgs, 1, args, 0, args.length);
+                }
             }
 
             var hookers = hookList.hookers(XposedInterface.PRIORITY_HIGHEST);
