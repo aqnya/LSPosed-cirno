@@ -44,6 +44,97 @@ public class LSPosedBridge {
      */
     private static final WeakHashMap<XposedInterface, Set<HookHandleImpl>> sLiveHandles = new WeakHashMap<>();
 
+    private static final XposedInterface.Hooker[] EMPTY_HOOKERS = new XposedInterface.Hooker[0];
+
+    /**
+     * Java-side mirror of the native hook table. Keeping the ordered hooker array here avoids a
+     * JNI call (and a fresh {@code Object[]}) on every hooked invocation.
+     */
+    private static final ConcurrentHashMap<Executable, HookList> sHookLists = new ConcurrentHashMap<>();
+
+    private static final class HookList {
+        /** Immutable ordered view, published atomically so readers never see mixed arrays. */
+        private static final class Snapshot {
+            static final Snapshot EMPTY = new Snapshot(new int[0], EMPTY_HOOKERS);
+
+            final int[] priorities;
+            final XposedInterface.Hooker[] hookers;
+
+            Snapshot(int[] priorities, XposedInterface.Hooker[] hookers) {
+                this.priorities = priorities;
+                this.hookers = hookers;
+            }
+        }
+
+        private volatile Snapshot current = Snapshot.EMPTY;
+
+        synchronized void add(int priority, XposedInterface.Hooker hooker) {
+            var snapshot = current;
+            var oldPriorities = snapshot.priorities;
+            var oldHookers = snapshot.hookers;
+            var length = oldHookers.length;
+
+            // Keep the list sorted by descending priority, stable for equal priorities.
+            var index = length;
+            for (var i = 0; i < length; i++) {
+                if (oldPriorities[i] < priority) {
+                    index = i;
+                    break;
+                }
+            }
+
+            var newPriorities = new int[length + 1];
+            var newHookers = new XposedInterface.Hooker[length + 1];
+            System.arraycopy(oldPriorities, 0, newPriorities, 0, index);
+            System.arraycopy(oldHookers, 0, newHookers, 0, index);
+            newPriorities[index] = priority;
+            newHookers[index] = hooker;
+            System.arraycopy(oldPriorities, index, newPriorities, index + 1, length - index);
+            System.arraycopy(oldHookers, index, newHookers, index + 1, length - index);
+            current = new Snapshot(newPriorities, newHookers);
+        }
+
+        synchronized void remove(XposedInterface.Hooker hooker) {
+            var snapshot = current;
+            var oldPriorities = snapshot.priorities;
+            var oldHookers = snapshot.hookers;
+            for (var i = 0; i < oldHookers.length; i++) {
+                if (oldHookers[i] == hooker) {
+                    var newPriorities = new int[oldPriorities.length - 1];
+                    var newHookers = new XposedInterface.Hooker[oldHookers.length - 1];
+                    System.arraycopy(oldPriorities, 0, newPriorities, 0, i);
+                    System.arraycopy(oldHookers, 0, newHookers, 0, i);
+                    System.arraycopy(oldPriorities, i + 1, newPriorities, i, newPriorities.length - i);
+                    System.arraycopy(oldHookers, i + 1, newHookers, i, newHookers.length - i);
+                    current = new Snapshot(newPriorities, newHookers);
+                    return;
+                }
+            }
+        }
+
+        XposedInterface.Hooker[] hookers(int maxPriority) {
+            var snapshot = current;
+            var all = snapshot.hookers;
+            if (all.length == 0 || maxPriority >= snapshot.priorities[0]) return all;
+            var start = 0;
+            while (start < all.length && snapshot.priorities[start] > maxPriority) start++;
+            if (start == 0) return all;
+            if (start == all.length) return EMPTY_HOOKERS;
+            var result = new XposedInterface.Hooker[all.length - start];
+            System.arraycopy(all, start, result, 0, result.length);
+            return result;
+        }
+    }
+
+    private static HookList hookList(Executable executable) {
+        return sHookLists.computeIfAbsent(executable, ignored -> new HookList());
+    }
+
+    private static XposedInterface.Hooker[] hookersOf(Executable executable, int maxPriority) {
+        var list = sHookLists.get(executable);
+        return list == null ? EMPTY_HOOKERS : list.hookers(maxPriority);
+    }
+
     private static final Method getCause;
 
     static {
@@ -92,7 +183,7 @@ public class LSPosedBridge {
                 System.arraycopy(rawArgs, 1, args, 0, args.length);
             }
 
-            Object[] hookers = HookBridge.callbackSnapshot(method, XposedInterface.PRIORITY_HIGHEST);
+            var hookers = hookersOf(method, XposedInterface.PRIORITY_HIGHEST);
             if (hookers.length == 0) {
                 return invokeOriginal(method, thisObject, args, method instanceof Constructor);
             }
@@ -115,7 +206,8 @@ public class LSPosedBridge {
     }
 
     private static Object checkReturnType(Object result, Class<?> returnType) {
-        if (returnType != null && !HookBridge.instanceOf(result, returnType)) {
+        // Class.isInstance is an intrinsic; avoids a JNI trip per hook result.
+        if (returnType != null && !returnType.isInstance(result)) {
             throw new ClassCastException(CAST_ERROR);
         }
         return result;
@@ -146,21 +238,23 @@ public class LSPosedBridge {
     }
 
     static class ChainImpl<T extends Executable> implements XposedInterface.Chain {
-        private final int threadId = HookBridge.gettid();
+        // Thread identity is enough to enforce the same-thread rule; avoids a JNI gettid() call
+        // on every interception.
+        private final Thread thread = Thread.currentThread();
         private final T executable;
         private final Class<?> returnType;
-        private final Object[] hookers;
+        private final XposedInterface.Hooker[] hookers;
         private final boolean special;
         private int index = -1;
         private boolean active = true;
         private Object thisObject;
         private Object[] args;
 
-        ChainImpl(T executable, Class<?> returnType, Object[] hookers,
+        ChainImpl(T executable, Class<?> returnType, XposedInterface.Hooker[] hookers,
                   Object thisObject, Object[] args, boolean special) {
             this.executable = executable;
             this.returnType = returnType;
-            this.hookers = hookers == null ? EMPTY_ARRAY : hookers;
+            this.hookers = hookers == null ? EMPTY_HOOKERS : hookers;
             this.thisObject = thisObject;
             this.args = args == null ? EMPTY_ARRAY : args;
             this.special = special;
@@ -171,7 +265,7 @@ public class LSPosedBridge {
         }
 
         private void checkActive() {
-            if (HookBridge.gettid() != threadId) {
+            if (Thread.currentThread() != thread) {
                 throw new IllegalStateException("Chain must be accessed in the same thread as the hooked method");
             }
             if (!active) {
@@ -207,7 +301,7 @@ public class LSPosedBridge {
             var next = ++index;
             try {
                 if (next != hookers.length) {
-                    Object result = ((XposedInterface.Hooker) hookers[next]).intercept(this);
+                    Object result = hookers[next].intercept(this);
                     return checkReturnType(result, returnType);
                 }
                 if (special) {
@@ -462,6 +556,7 @@ public class LSPosedBridge {
                 if (!valid) return;
                 valid = false;
                 HookBridge.unhookMethod(executable, hooker);
+                hookList(executable).remove(hooker);
                 untrackHandle(context, this);
                 if (id != null) {
                     var byId = hooksOf(context).get(executable);
@@ -485,11 +580,15 @@ public class LSPosedBridge {
                     newHooker = new ProtectiveHooker(context, newHooker);
                 }
                 HookBridge.unhookMethod(executable, oldHooker);
+                hookList(executable).remove(oldHooker);
                 if (!HookBridge.hookMethod(executable, NativeHooker.class, priority, newHooker)) {
                     // Restore the previous hook so this handle stays usable.
-                    HookBridge.hookMethod(executable, NativeHooker.class, priority, oldHooker);
+                    if (HookBridge.hookMethod(executable, NativeHooker.class, priority, oldHooker)) {
+                        hookList(executable).add(priority, oldHooker);
+                    }
                     throw new HookFailedError("Cannot replace hook " + executable);
                 }
+                hookList(executable).add(priority, newHooker);
                 valid = false;
                 untrackHandle(context, this);
                 var newHandle = new HookHandleImpl(context, executable, priority, exceptionMode, id, newHooker);
@@ -545,7 +644,7 @@ public class LSPosedBridge {
 
         Object invokeChain(Object thisObject, Object[] args, int maxPriority, boolean special)
                 throws InvocationTargetException, IllegalAccessException {
-            var hookers = HookBridge.callbackSnapshot(executable, maxPriority);
+            var hookers = hookersOf(executable, maxPriority);
             var chain = new ChainImpl<>(executable, returnTypeOf(executable), hookers, thisObject, args, special);
             try {
                 return chain.proceed();
@@ -688,6 +787,7 @@ public class LSPosedBridge {
         }
         validateHookTarget(hookMethod);
         if (HookBridge.hookMethod(hookMethod, LSPosedBridge.NativeHooker.class, priority, hooker)) {
+            hookList(hookMethod).add(priority, hooker);
             var handle = new HookHandleImpl(context, hookMethod, priority, mode, id, hooker);
             trackHandle(context, handle);
             return handle;
@@ -717,6 +817,7 @@ public class LSPosedBridge {
             if (!HookBridge.hookMethod(hookMethod, LSPosedBridge.NativeHooker.class, priority, hooker)) {
                 throw new HookFailedError("Cannot hook " + hookMethod);
             }
+            hookList(hookMethod).add(priority, hooker);
             var handle = new HookHandleImpl(context, hookMethod, priority, mode, id, hooker);
             trackHandle(context, handle);
             byId.put(id, handle);
