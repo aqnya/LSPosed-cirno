@@ -18,15 +18,15 @@
  * Copyright (C) 2021 LSPosed Contributors
  */
 
-package org.lsposed.manager;
+package org.lsposed.manager
 
-import android.os.IBinder;
+import android.os.IBinder
+import org.lsposed.manager.receivers.LSPManagerServiceHolder
 
-import org.lsposed.manager.receivers.LSPManagerServiceHolder;
-
-public class Constants {
-    public static boolean setBinder(IBinder binder) {
-        LSPManagerServiceHolder.init(binder);
-        return LSPManagerServiceHolder.getService().asBinder().isBinderAlive();
+object Constants {
+    @JvmStatic
+    fun setBinder(binder: IBinder): Boolean {
+        LSPManagerServiceHolder.init(binder)
+        return LSPManagerServiceHolder.getService().asBinder().isBinderAlive()
     }
 }

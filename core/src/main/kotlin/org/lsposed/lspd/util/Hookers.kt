@@ -18,20 +18,33 @@
  * Copyright (C) 2021 LSPosed Contributors
  */
 
-package org.lsposed.lspd.util;
+package org.lsposed.lspd.util
 
-import android.app.ActivityThread;
+import android.app.ActivityThread
 
-public class Hookers {
-
-    public static void logD(String prefix) {
-        Utils.logD(String.format("%s: pkg=%s, prc=%s", prefix, ActivityThread.currentPackageName(),
-            ActivityThread.currentProcessName()));
+object Hookers {
+    @JvmStatic
+    fun logD(prefix: String) {
+        Utils.logD(
+            String.format(
+                "%s: pkg=%s, prc=%s",
+                prefix,
+                ActivityThread.currentPackageName(),
+                ActivityThread.currentProcessName(),
+            ),
+        )
     }
 
-    public static void logE(String prefix, Throwable throwable) {
-        Utils.logE(String.format("%s: pkg=%s, prc=%s", prefix, ActivityThread.currentPackageName(),
-            ActivityThread.currentProcessName()), throwable);
+    @JvmStatic
+    fun logE(prefix: String, throwable: Throwable) {
+        Utils.logE(
+            String.format(
+                "%s: pkg=%s, prc=%s",
+                prefix,
+                ActivityThread.currentPackageName(),
+                ActivityThread.currentProcessName(),
+            ),
+            throwable,
+        )
     }
-
 }
