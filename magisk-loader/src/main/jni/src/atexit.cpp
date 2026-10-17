@@ -26,83 +26,18 @@
  * SUCH DAMAGE.
  */
 
-#include "cstdlib"
-#include <pthread.h>
+// The atexit registry itself lives in core/rust/src/atexit.rs. These
+// exported symbols stay in C++ so they keep overriding libc++'s weakly
+// linked definitions for this shared library.
 
-namespace {
-    struct AtexitEntry {
-        void (*fn)(void *);  // the __cxa_atexit callback
-        void *arg;          // argument for `fn` callback
-    };
+extern "C" int lspd_rust_cxa_atexit(void (*func)(void *), void *arg);
 
-    AtexitEntry *g_array = nullptr;
-    size_t capacity = 8;
-    size_t count = 0;
-    pthread_mutex_t g_atexit_mutex = PTHREAD_MUTEX_INITIALIZER;
+extern "C" void lspd_rust_cxa_finalize();
 
-    inline void atexit_lock() {
-        pthread_mutex_lock(&g_atexit_mutex);
-    }
+extern "C" [[gnu::used]] int __cxa_atexit(void (*func)(void *), void *arg, void * /* dso */) { // NOLINT(bugprone-reserved-identifier)
+    return lspd_rust_cxa_atexit(func, arg);
+}
 
-    inline void atexit_unlock() {
-        pthread_mutex_unlock(&g_atexit_mutex);
-    }
-
-    // Register a function to be called either when a library is unloaded (dso != nullptr), or when the
-    // program exits (dso == nullptr). The `dso` argument is typically the address of a hidden
-    // __dso_handle variable. This function is also used as the backend for the atexit function.
-    //
-    // See https://itanium-cxx-abi.github.io/cxx-abi/abi.html#dso-dtor.
-    //
-    extern "C" [[gnu::used]] int __cxa_atexit(void (*func)(void *), void *arg, void * /* dso */) { // NOLINT(bugprone-reserved-identifier)
-        int result = -1;
-
-        if (func != nullptr) {
-            atexit_lock();
-            count++;
-            if (!g_array) {
-                g_array = reinterpret_cast<AtexitEntry*>(malloc(capacity * sizeof(AtexitEntry)));
-            }
-            if (count > capacity) [[unlikely]] {
-                capacity *= 2;
-                g_array = reinterpret_cast<AtexitEntry*>(realloc(g_array, capacity * sizeof(AtexitEntry)));
-            }
-            g_array[count - 1].fn = func;
-            g_array[count - 1].arg = arg;
-            result = 0;
-            atexit_unlock();
-        }
-
-        return result;
-    }
-
-    // This function will be called by __on_dlclose, which is a destructor of dso
-    // https://cs.android.com/android/platform/superproject/main/+/main:bionic/libc/arch-common/bionic/crtbegin_so.c;l=34;drc=5501003be73b73de59044b44b12f6e20ba6e0021
-    extern "C" [[gnu::used]] void __cxa_finalize(void * /* dso */) { // NOLINT(bugprone-reserved-identifier)
-        atexit_lock();
-        restart:
-        if (count > 0) {
-            size_t total = count;
-            for (size_t i = count - 1;; --i) {
-                if (g_array[i].fn == nullptr) continue;
-
-                // Clear the entry in the array to avoid calling an entry again
-                // if __cxa_finalize is called recursively.
-                const AtexitEntry entry = g_array[i];
-                g_array[i] = {};
-
-                atexit_unlock();
-                entry.fn(entry.arg);
-                atexit_lock();
-
-                if (count != total) {
-                    goto restart;
-                }
-                if (i == 0) break;
-            }
-
-            free(g_array);
-        }
-        atexit_unlock();
-    }
+extern "C" [[gnu::used]] void __cxa_finalize(void * /* dso */) { // NOLINT(bugprone-reserved-identifier)
+    lspd_rust_cxa_finalize();
 }

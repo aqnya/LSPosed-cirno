@@ -22,6 +22,7 @@
 //! The native bridge JNI entry point lives here; the rest of the core is
 //! still C++ and is called through a small C ABI.
 
+mod atexit;
 mod elf_util;
 
 #[cfg(target_os = "android")]
