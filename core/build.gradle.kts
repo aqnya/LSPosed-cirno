@@ -22,7 +22,6 @@ val verCode: Int by rootProject.extra
 
 plugins {
     alias(libs.plugins.agp.lib)
-    alias(libs.plugins.kotlin)
 }
 
 android {

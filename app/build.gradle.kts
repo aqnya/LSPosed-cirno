@@ -21,7 +21,6 @@ import java.time.Instant
 
 plugins {
     alias(libs.plugins.agp.app)
-    alias(libs.plugins.kotlin)
     alias(libs.plugins.nav.safeargs)
     alias(libs.plugins.autoresconfig)
     alias(libs.plugins.materialthemebuilder)
@@ -151,7 +150,6 @@ dependencies {
     implementation(libs.rikkax.layoutinflater)
     implementation(libs.appiconloader)
     implementation(libs.hiddenapibypass)
-    implementation(libs.kotlin.stdlib)
     implementation(libs.kotlinx.coroutines.core)
     implementation(projects.services.managerService)
 

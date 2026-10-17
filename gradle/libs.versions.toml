@@ -3,7 +3,6 @@ libxposedApi = "102.0.0"
 libxposedService = "102.0.0"
 libxposedAnnotation = "1.0.0"
 agp = "9.2.1"
-kotlin = "2.2.20"
 nav = "2.9.8"
 glide = "5.0.7"
 okhttp = "5.3.2"
@@ -13,7 +12,6 @@ ndk = "29.0.13599879-beta2"
 [plugins]
 agp-lib = { id = "com.android.library", version.ref = "agp" }
 agp-app = { id = "com.android.application", version.ref = "agp" }
-kotlin = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 nav-safeargs = { id = "androidx.navigation.safeargs", version.ref = "nav" }
 autoresconfig = { id = "dev.rikka.tools.autoresconfig", version = "ebd7e1ec68c89ac38fc2d675786dd120d64653aa" }
 materialthemebuilder = { id = "dev.rikka.tools.materialthemebuilder", version = "63f1f189450912baade92876965396ebf1615d4e" }
@@ -64,5 +62,4 @@ libxposed-api = { module = "io.github.libxposed:api", version.ref = "libxposedAp
 libxposed-service = { module = "io.github.libxposed:service", version.ref = "libxposedService" }
 libxposed-interfaces = { module = "io.github.libxposed:interface", version.ref = "libxposedService" }
 libxposed-annotation = { module = "io.github.libxposed:annotation", version.ref = "libxposedAnnotation" }
-kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version = "1.11.0" }
