@@ -22,30 +22,7 @@
 //! The native bridge JNI entry point lives here; the rest of the core is
 //! still C++ and is called through a small C ABI.
 
-use jni::objects::{JClass, JString};
-use jni::JNIEnv;
-use std::ffi::c_char;
-
 mod elf_util;
 
-extern "C" {
-    fn lspd_register_native_lib(name: *const c_char, size: usize);
-}
-
-#[no_mangle]
-pub extern "system" fn Java_org_lsposed_lspd_nativebridge_NativeAPI_recordNativeEntrypoint(
-    mut env: JNIEnv,
-    _class: JClass,
-    name: JString,
-) {
-    if name.as_raw().is_null() {
-        return;
-    }
-    if let Ok(name) = env.get_string(&name) {
-        let name: String = name.into();
-        let bytes = name.as_bytes();
-        unsafe {
-            lspd_register_native_lib(bytes.as_ptr().cast(), bytes.len());
-        }
-    }
-}
+#[cfg(target_os = "android")]
+mod native_api;

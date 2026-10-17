@@ -16,16 +16,15 @@ add_library(${PROJECT_NAME} SHARED ${SRC_LIST} ${CMAKE_CURRENT_BINARY_DIR}/src/l
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PRIVATE src)
 
-if (DEFINED RUST_CORE_DIR)
-    set(RUST_CORE_LIB "${RUST_CORE_DIR}/${ANDROID_ABI}/liblspd_core.a")
-    add_library(lspd_core_rust STATIC IMPORTED)
-    set_target_properties(lspd_core_rust PROPERTIES IMPORTED_LOCATION "${RUST_CORE_LIB}")
-    target_compile_definitions(core PRIVATE LSPD_RUST_CORE)
-    target_link_libraries(${PROJECT_NAME} PRIVATE
-            "-Wl,--start-group" core lspd_core_rust "-Wl,--end-group" log dl m)
-else()
-    target_link_libraries(${PROJECT_NAME} core log)
+if (NOT DEFINED RUST_CORE_DIR)
+    message(FATAL_ERROR "RUST_CORE_DIR is required")
 endif()
+
+set(RUST_CORE_LIB "${RUST_CORE_DIR}/${ANDROID_ABI}/liblspd_core.a")
+add_library(lspd_core_rust STATIC IMPORTED)
+set_target_properties(lspd_core_rust PROPERTIES IMPORTED_LOCATION "${RUST_CORE_LIB}")
+target_link_libraries(${PROJECT_NAME} PRIVATE
+        "-Wl,--start-group" core lspd_core_rust "-Wl,--end-group" log dl m)
 
 if (DEFINED DEBUG_SYMBOLS_PATH)
     set(DEBUG_SYMBOLS_PATH ${DEBUG_SYMBOLS_PATH}/${MODULE_API})

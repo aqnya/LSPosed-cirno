@@ -23,24 +23,22 @@
 //
 #include "native_api.h"
 #include "native_util.h"
-#include "utils/jni_helper.hpp"
-#include "../native_api.h"
 
 #include <jni.h>
 
-using namespace lsplant;
-
-#ifdef LSPD_RUST_CORE
-// Implemented in Rust (core/rust/src/lib.rs).
+// Implemented in core/rust/src/native_api.rs.
 extern "C" void Java_org_lsposed_lspd_nativebridge_NativeAPI_recordNativeEntrypoint(
         JNIEnv *env, jclass clazz, jstring jstr);
-#else
-extern "C" void Java_org_lsposed_lspd_nativebridge_NativeAPI_recordNativeEntrypoint(
-        JNIEnv *env, [[maybe_unused]] jclass clazz, jstring jstr) {
-    JUTFString str(env, jstr);
-    lspd::RegisterNativeLib(str);
+
+// Dobby wrappers for the Rust native API. Keeping these two calls in C++
+// avoids linking the Dobby static library into the host-side Rust tests.
+extern "C" int lspd_native_hook(void *function, void *replacement, void **backup) {
+    return lspd::HookFunction(function, replacement, backup);
 }
-#endif
+
+extern "C" int lspd_native_unhook(void *function) {
+    return lspd::UnhookFunction(function);
+}
 
 namespace lspd {
     static JNINativeMethod gMethods[] = {
