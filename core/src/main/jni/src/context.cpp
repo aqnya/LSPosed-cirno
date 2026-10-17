@@ -24,7 +24,6 @@
 #include "context.h"
 #include "native_util.h"
 #include "jni/hook_bridge.h"
-#include "jni/native_api.h"
 #include "jni/resources_hook.h"
 #include "symbol_cache.h"
 
@@ -36,7 +35,6 @@ extern "C" void lspd_init_hooks(JNIEnv *env, jobject class_loader);
 extern "C" jboolean lspd_make_dex_file_trusted(JNIEnv *env, jobject cookie);
 extern "C" void lspd_register_resources_hook(JNIEnv *env);
 extern "C" void lspd_register_hook_bridge(JNIEnv *env);
-extern "C" void lspd_register_native_api(JNIEnv *env);
 
 
 namespace lspd {
@@ -78,6 +76,13 @@ extern "C" void lspd_register_hook_bridge(JNIEnv *env) {
     lspd::RegisterHookBridge(env);
 }
 
-extern "C" void lspd_register_native_api(JNIEnv *env) {
-    lspd::RegisterNativeAPI(env);
+extern "C" jobject lspd_get_current_class_loader() {
+    auto *context = lspd::Context::GetInstance();
+    return context ? context->GetCurrentClassLoader() : nullptr;
+}
+
+extern "C" const char *lspd_native_bridge_prefix(size_t *length) {
+    static auto signature = lspd::GetNativeBridgeSignature();
+    if (length) *length = signature.size();
+    return signature.c_str();
 }

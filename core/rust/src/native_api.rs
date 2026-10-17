@@ -25,9 +25,11 @@
 //! not need to link the Dobby static library on the host.
 
 use jni::objects::{JClass, JString};
-use jni::JNIEnv;
+use jni::sys::{jobject, JNIEnv as RawJNIEnv};
+use jni::{JNIEnv, NativeMethod};
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::ptr;
+use std::slice;
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::{Mutex, OnceLock};
 
@@ -45,6 +47,8 @@ struct NativeAPIEntries {
 }
 
 extern "C" {
+    fn lspd_get_current_class_loader() -> jobject;
+    fn lspd_native_bridge_prefix(length: *mut usize) -> *const c_char;
     fn lspd_native_hook(
         function: *mut c_void,
         replacement: *mut c_void,
@@ -197,6 +201,48 @@ unsafe extern "C" fn do_dlopen_hook(
         callback(name, handle);
     }
     handle
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn lspd_register_native_api(raw_env: *mut RawJNIEnv) {
+    if raw_env.is_null() {
+        return;
+    }
+    let Ok(mut env) = JNIEnv::from_raw(raw_env) else {
+        return;
+    };
+    let class_loader = lspd_get_current_class_loader();
+    if class_loader.is_null() {
+        return;
+    }
+
+    let mut prefix_length = 0usize;
+    let prefix = lspd_native_bridge_prefix(&mut prefix_length);
+    if prefix.is_null() {
+        return;
+    }
+    let prefix = slice::from_raw_parts(prefix as *const u8, prefix_length);
+    let mut class_name = Vec::with_capacity(prefix.len() + 9);
+    class_name.extend_from_slice(prefix);
+    class_name.extend_from_slice(b"NativeAPI");
+
+    let class = crate::class_loader::lspd_find_class_from_loader(
+        env.get_native_interface(),
+        class_loader,
+        class_name.as_ptr().cast(),
+        class_name.len(),
+    );
+    if class.is_null() {
+        return;
+    }
+    let class = JClass::from_raw(class);
+    let methods = [NativeMethod {
+        name: "recordNativeEntrypoint".into(),
+        sig: "(Ljava/lang/String;)V".into(),
+        fn_ptr: Java_org_lsposed_lspd_nativebridge_NativeAPI_recordNativeEntrypoint
+            as *const () as *mut c_void,
+    }];
+    let _ = env.register_native_methods(&class, &methods);
 }
 
 #[no_mangle]
