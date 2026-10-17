@@ -50,7 +50,7 @@ extern "C" {
         callback: jobject,
     ) -> jobject;
     fn lspd_lsplant_deoptimize(env: *mut RawJNIEnv, method: jobject) -> jboolean;
-    fn lspd_lsplant_make_dex_trusted(env: *mut RawJNIEnv, cookie: jobject) -> jboolean;
+    fn lspd_make_dex_file_trusted(env: *mut RawJNIEnv, cookie: jobject) -> jboolean;
     fn lspd_hook_bridge_invoke_original(
         env: *mut RawJNIEnv,
         method: jobject,
@@ -388,7 +388,7 @@ pub extern "system" fn Java_org_lsposed_lspd_nativebridge_HookBridge_setTrusted(
     if cookie.is_null() {
         return JNI_FALSE;
     }
-    unsafe { lspd_lsplant_make_dex_trusted(env.get_native_interface(), cookie.as_raw()) }
+    unsafe { lspd_make_dex_file_trusted(env.get_native_interface(), cookie.as_raw()) }
 }
 
 #[no_mangle]
