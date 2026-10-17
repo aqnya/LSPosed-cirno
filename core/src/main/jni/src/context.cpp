@@ -35,22 +35,6 @@ namespace lspd {
     std::unique_ptr<Context> Context::instance_;
     std::unique_ptr<ConfigBridge> ConfigBridge::instance_;
 
-    Context::PreloadedDex::PreloadedDex(int fd, std::size_t size) {
-        LOGD("Context::PreloadedDex::PreloadedDex: fd={}, size={}", fd, size);
-        auto *addr = mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0);
-
-        if (addr != MAP_FAILED) {
-            addr_ = addr;
-            size_ = size;
-        } else {
-            PLOGE("Read dex");
-        }
-    }
-
-    Context::PreloadedDex::~PreloadedDex() {
-        if (*this) munmap(addr_, size_);
-    }
-
     void Context::InitArtHooker(JNIEnv *env, const lsplant::InitInfo &initInfo) {
         if (!lsplant::Init(env, initInfo)) {
             LOGE("Failed to init lsplant");

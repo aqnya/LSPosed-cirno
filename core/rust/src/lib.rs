@@ -24,6 +24,7 @@
 
 mod atexit;
 mod elf_util;
+mod preloaded_dex;
 
 #[cfg(target_os = "android")]
 mod native_api;

@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <utility>
 #include <unistd.h>
 #include <vector>
@@ -29,6 +30,13 @@
 #include <lsplant.hpp>
 #include "utils.h"
 #include "utils/jni_helper.hpp"
+
+extern "C" {
+void *lspd_preloaded_dex_create(int fd, size_t size);
+void lspd_preloaded_dex_destroy(void *handle);
+void *lspd_preloaded_dex_data(void *handle);
+size_t lspd_preloaded_dex_size(void *handle);
+}
 
 namespace lspd {
     class Context {
@@ -58,41 +66,46 @@ namespace lspd {
 
         struct PreloadedDex {
 
-            PreloadedDex() : addr_(nullptr), size_(0) {}
+            PreloadedDex() = default;
 
             PreloadedDex(const PreloadedDex &) = delete;
 
             PreloadedDex &operator=(const PreloadedDex &) = delete;
 
-            PreloadedDex(int fd, std::size_t size);
+            PreloadedDex(int fd, std::size_t size)
+                    : handle_(lspd_preloaded_dex_create(fd, size)) {}
 
-            PreloadedDex &operator=(PreloadedDex &&other) {
-                addr_ = other.addr_;
-                size_ = other.size_;
-                other.addr_ = nullptr;
-                other.size_ = 0;
+            PreloadedDex &operator=(PreloadedDex &&other) noexcept {
+                if (this != &other) {
+                    lspd_preloaded_dex_destroy(handle_);
+                    handle_ = other.handle_;
+                    other.handle_ = nullptr;
+                }
                 return *this;
             }
 
-            PreloadedDex(PreloadedDex &&other) : addr_(other.addr_), size_(other.size_) {
-                other.addr_ = nullptr;
-                other.size_ = 0;
-            };
+            PreloadedDex(PreloadedDex &&other) noexcept : handle_(other.handle_) {
+                other.handle_ = nullptr;
+            }
 
-            // Use with caution!
-            PreloadedDex(void *addr, size_t size) : addr_(addr), size_(size) {};
+            operator bool() const {
+                return lspd_preloaded_dex_size(handle_) != 0;
+            }
 
-            operator bool() const { return addr_ && size_; }
+            auto size() const {
+                return lspd_preloaded_dex_size(handle_);
+            }
 
-            auto size() const { return size_; }
+            auto data() const {
+                return lspd_preloaded_dex_data(handle_);
+            }
 
-            auto data() const { return addr_; }
-
-            ~PreloadedDex();
+            ~PreloadedDex() {
+                lspd_preloaded_dex_destroy(handle_);
+            }
 
         private:
-            void *addr_;
-            std::size_t size_;
+            void *handle_ = nullptr;
         };
 
         Context() {}
