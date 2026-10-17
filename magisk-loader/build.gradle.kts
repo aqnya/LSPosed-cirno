@@ -40,6 +40,7 @@ val injectedPackageUid: Int by rootProject.extra
 val defaultManagerPackageName: String by rootProject.extra
 val verCode: Int by rootProject.extra
 val verName: String by rootProject.extra
+val androidMinSdkVersion: Int by rootProject.extra
 
 android {
     flavorDimensions += "api"
@@ -83,6 +84,8 @@ android {
     namespace = "org.lsposed.lspd"
 }
 
+val rustCoreDir = layout.buildDirectory.dir("generated/rust/core").get().asFile
+
 cmaker {
     default {
         arguments += arrayOf(
@@ -90,12 +93,53 @@ cmaker {
             "-DMODULE_NAME=${name.lowercase()}_$moduleBaseId",
             "-DAPI=${name.lowercase()}",
             "-DAPI_VERSION=1",
+            "-DRUST_CORE_DIR=${rustCoreDir.absolutePath}",
             "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON",
             "-DCMAKE_VISIBILITY_INLINES_HIDDEN=ON",
             "-DCMAKE_CXX_VISIBILITY_PRESET=hidden",
             "-DCMAKE_C_VISIBILITY_PRESET=hidden",
         )
     }
+}
+
+val rustAbiToTriple = linkedMapOf(
+    "arm64-v8a" to "aarch64-linux-android",
+    "armeabi-v7a" to "armv7-linux-androideabi",
+    "x86" to "i686-linux-android",
+    "x86_64" to "x86_64-linux-android",
+)
+
+val buildRustCore = tasks.register("buildRustCore") {
+    group = "rust"
+    doLast {
+        val ndkFile = androidComponents.sdkComponents.ndkDirectory.get().asFile
+        val prebuilt = File(ndkFile, "toolchains/llvm/prebuilt").listFiles()?.firstOrNull()
+            ?: error("NDK LLVM toolchain not found under $ndkFile")
+        val crateDir = File(rootProject.projectDir, "core/rust")
+        val targetDir = layout.buildDirectory.dir("rust/core/target").get().asFile
+        val outDir = rustCoreDir
+
+        val cargoArgs = mutableListOf("cargo", "ndk", "--platform", androidMinSdkVersion.toString())
+        rustAbiToTriple.keys.forEach { abi -> cargoArgs += listOf("-t", abi) }
+        cargoArgs += listOf("build", "--release", "--target-dir", targetDir.absolutePath)
+
+        providers.exec {
+            workingDir = crateDir
+            environment("ANDROID_NDK_HOME", ndkFile.absolutePath)
+            commandLine(cargoArgs)
+        }.result.get().assertNormalExitValue()
+
+        rustAbiToTriple.forEach { (abi, triple) ->
+            val built = File(targetDir, "$triple/release/liblspd_core.a")
+            if (!built.exists()) error("liblspd_core.a not found for $abi at $built")
+            val abiDir = File(outDir, abi).apply { mkdirs() }
+            built.copyTo(File(abiDir, "liblspd_core.a"), overwrite = true)
+        }
+    }
+}
+
+tasks.matching { it.name.contains("CMake") }.configureEach {
+    dependsOn(buildRustCore)
 }
 
 abstract class Injected @Inject constructor(val magiskDir: String) {

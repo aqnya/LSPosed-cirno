@@ -1,0 +1,20 @@
+[package]
+name = "lspd_core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+publish = false
+
+[lib]
+name = "lspd_core"
+crate-type = ["staticlib"]
+
+[dependencies]
+jni = "0.21"
+
+[profile.release]
+strip = false
+debug = false
+panic = "abort"
+opt-level = "z"
+lto = true

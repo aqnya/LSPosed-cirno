@@ -26,14 +26,23 @@
 #include "utils/jni_helper.hpp"
 #include "../native_api.h"
 
+#include <jni.h>
+
 using namespace lsplant;
 
-namespace lspd {
-    LSP_DEF_NATIVE_METHOD(void, NativeAPI, recordNativeEntrypoint, jstring jstr) {
-        lsplant::JUTFString str(env, jstr);
-        RegisterNativeLib(str);
-    }
+#ifdef LSPD_RUST_CORE
+// Implemented in Rust (core/rust/src/lib.rs).
+extern "C" void Java_org_lsposed_lspd_nativebridge_NativeAPI_recordNativeEntrypoint(
+        JNIEnv *env, jclass clazz, jstring jstr);
+#else
+extern "C" void Java_org_lsposed_lspd_nativebridge_NativeAPI_recordNativeEntrypoint(
+        JNIEnv *env, [[maybe_unused]] jclass clazz, jstring jstr) {
+    JUTFString str(env, jstr);
+    lspd::RegisterNativeLib(str);
+}
+#endif
 
+namespace lspd {
     static JNINativeMethod gMethods[] = {
             LSP_NATIVE_METHOD(NativeAPI, recordNativeEntrypoint, "(Ljava/lang/String;)V")
     };

@@ -148,3 +148,8 @@ namespace lspd {
         return false;
     }
 }
+
+extern "C" void lspd_register_native_lib(const char *name, size_t size) {
+    if (name == nullptr) return;
+    lspd::RegisterNativeLib(std::string(name, size));
+}
