@@ -291,6 +291,7 @@ struct Logcat<'local> {
     thiz: JObject<'local>,
     files: Arc<Mutex<Files>>,
     my_pid: libc::pid_t,
+    line: Vec<u8>,
 }
 
 impl<'local> Logcat<'local> {
@@ -341,13 +342,13 @@ impl<'local> Logcat<'local> {
         }
     }
 
-    fn print_line(&self, entry: &AndroidLogEntry, verbose: bool) {
-        let line = format_line(entry);
+    fn print_line(&mut self, entry: &AndroidLogEntry, verbose: bool) {
+        format_line(entry, &mut self.line);
         if let Ok(mut files) = self.files.lock() {
             if verbose {
-                files.write_verbose(&line);
+                files.write_verbose(&self.line);
             } else {
-                files.write_modules(&line);
+                files.write_modules(&self.line);
             }
         }
     }
@@ -504,7 +505,8 @@ impl<'local> Logcat<'local> {
     }
 }
 
-fn format_line(entry: &AndroidLogEntry) -> Vec<u8> {
+fn format_line(entry: &AndroidLogEntry, line: &mut Vec<u8>) {
+    line.clear();
     let seconds = entry.tv_sec;
     let mut nanos = entry.tv_nsec;
     if seconds < 0 {
@@ -546,9 +548,8 @@ fn format_line(entry: &AndroidLogEntry) -> Vec<u8> {
         b'?'
     };
 
-    let mut line = Vec::with_capacity(128 + message.len());
     let _ = write!(
-        &mut line,
+        line,
         "[ {}.{:03} {:8}:{:6}:{:6} {}/",
         time,
         nanos / MS_PER_NSEC,
@@ -564,7 +565,6 @@ fn format_line(entry: &AndroidLogEntry) -> Vec<u8> {
     line.extend_from_slice(b" ] ");
     line.extend_from_slice(message);
     line.push(b'\n');
-    line
 }
 
 fn watchdog(files: Arc<Mutex<Files>>) {
@@ -638,6 +638,7 @@ pub extern "system" fn Java_org_lsposed_lspd_service_LogcatService_runLogcat(
         thiz,
         files: Arc::new(Mutex::new(Files::new())),
         my_pid,
+        line: Vec::with_capacity(128),
     };
     logcat.run()
 }
