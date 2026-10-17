@@ -26,6 +26,8 @@ use jni::objects::{JClass, JString};
 use jni::JNIEnv;
 use std::ffi::c_char;
 
+mod elf_util;
+
 extern "C" {
     fn lspd_register_native_lib(name: *const c_char, size: usize);
 }
