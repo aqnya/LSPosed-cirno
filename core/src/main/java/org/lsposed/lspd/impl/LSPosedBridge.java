@@ -836,6 +836,14 @@ public class LSPosedBridge {
         return doHook(null, hookMethod, priority, XposedInterface.ExceptionMode.PASSTHROUGH, null, hooker);
     }
 
+    /**
+     * Keeps the Java-side hooker cache in sync when a hooker is removed without going through a
+     * {@link XposedInterface.HookHandle} (the deprecated legacy unhook path).
+     */
+    public static void doUnhook(Executable hookMethod, XposedInterface.Hooker hooker) {
+        hookList(hookMethod).remove(hooker);
+    }
+
     public static XposedInterface.HookBuilder newHookBuilder(
             XposedInterface context,
             Executable executable,

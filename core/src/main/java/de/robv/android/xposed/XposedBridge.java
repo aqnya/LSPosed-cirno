@@ -230,6 +230,7 @@ public final class XposedBridge {
             var hooker = legacyHookers.remove(new HookKey(hookMethod, callback));
             if (hooker != null) {
                 HookBridge.unhookMethod((Executable) hookMethod, hooker);
+                LSPosedBridge.doUnhook((Executable) hookMethod, hooker);
             }
         }
     }
