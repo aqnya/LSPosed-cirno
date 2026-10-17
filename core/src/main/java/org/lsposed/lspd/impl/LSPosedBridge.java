@@ -256,6 +256,8 @@ public class LSPosedBridge {
         private boolean active = true;
         private Object thisObject;
         private Object[] args;
+        private Object[] argsListViewSource;
+        private List<Object> argsListView;
 
         ChainImpl(T executable, Class<?> returnType, XposedInterface.Hooker[] hookers,
                   Object thisObject, Object[] args, boolean special, boolean isConstructor) {
@@ -295,7 +297,13 @@ public class LSPosedBridge {
         @NonNull
         @Override
         public List<Object> getArgs() {
-            return Collections.unmodifiableList(Arrays.asList(args));
+            // Most hookers read args repeatedly; reuse the view until proceed(args) swaps them.
+            var currentArgs = args;
+            if (argsListView == null || argsListViewSource != currentArgs) {
+                argsListView = Collections.unmodifiableList(Arrays.asList(currentArgs));
+                argsListViewSource = currentArgs;
+            }
+            return argsListView;
         }
 
         @Override
