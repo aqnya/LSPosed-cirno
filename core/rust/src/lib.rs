@@ -25,6 +25,8 @@
 mod atexit;
 #[cfg(target_os = "android")]
 mod class_loader;
+#[cfg(target_os = "android")]
+mod context_hooks;
 mod elf_util;
 mod preloaded_dex;
 

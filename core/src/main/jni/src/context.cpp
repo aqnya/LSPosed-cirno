@@ -32,6 +32,11 @@ using namespace lsplant;
 
 extern "C" jclass lspd_find_class_from_loader(JNIEnv *env, jobject class_loader,
                                                const char *class_name, size_t class_name_len);
+extern "C" void lspd_init_hooks(JNIEnv *env, jobject class_loader);
+extern "C" jboolean lspd_make_dex_file_trusted(JNIEnv *env, jobject cookie);
+extern "C" void lspd_register_resources_hook(JNIEnv *env);
+extern "C" void lspd_register_hook_bridge(JNIEnv *env);
+extern "C" void lspd_register_native_api(JNIEnv *env);
 
 
 namespace lspd {
@@ -46,38 +51,7 @@ namespace lspd {
     }
 
     void Context::InitHooks(JNIEnv *env) {
-        auto path_list = JNI_GetObjectFieldOf(env, inject_class_loader_, "pathList",
-                                              "Ldalvik/system/DexPathList;");
-        if (!path_list) {
-            LOGE("Failed to get path list");
-            return;
-        }
-        const auto elements = JNI_Cast<jobjectArray>(
-                JNI_GetObjectFieldOf(env, path_list, "dexElements",
-                                     "[Ldalvik/system/DexPathList$Element;"));
-        if (!elements) {
-            LOGE("Failed to get elements");
-            return;
-        }
-        for (const auto &element: elements) {
-            if (!element)
-                continue;
-            auto java_dex_file = JNI_GetObjectFieldOf(env, element, "dexFile",
-                                                      "Ldalvik/system/DexFile;");
-            if (!java_dex_file) {
-                LOGE("Failed to get java dex file");
-                return;
-            }
-            auto cookie = JNI_GetObjectFieldOf(env, java_dex_file, "mCookie", "Ljava/lang/Object;");
-            if (!cookie) {
-                LOGE("Failed to get cookie");
-                return;
-            }
-            lsplant::MakeDexFileTrusted(env, cookie.get());
-        }
-        RegisterResourcesHook(env);
-        RegisterHookBridge(env);
-        RegisterNativeAPI(env);
+        lspd_init_hooks(env, inject_class_loader_);
     }
 
     ScopedLocalRef<jclass>
@@ -91,3 +65,19 @@ namespace lspd {
         return {env, clazz};
     }
 }  // namespace lspd
+
+extern "C" jboolean lspd_make_dex_file_trusted(JNIEnv *env, jobject cookie) {
+    return lsplant::MakeDexFileTrusted(env, cookie);
+}
+
+extern "C" void lspd_register_resources_hook(JNIEnv *env) {
+    lspd::RegisterResourcesHook(env);
+}
+
+extern "C" void lspd_register_hook_bridge(JNIEnv *env) {
+    lspd::RegisterHookBridge(env);
+}
+
+extern "C" void lspd_register_native_api(JNIEnv *env) {
+    lspd::RegisterNativeAPI(env);
+}
