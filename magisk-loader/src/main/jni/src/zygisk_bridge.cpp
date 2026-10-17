@@ -18,6 +18,7 @@
  */
 
 #include <jni.h>
+#include <sys/types.h>
 
 #include "../api/zygisk.h"
 #include "config_impl.h"
