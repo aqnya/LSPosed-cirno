@@ -93,6 +93,8 @@ public class LogcatService implements Runnable {
         }
     }
 
+    private static native void flushLogs();
+
     private native void runLogcat();
 
     @Override
@@ -197,11 +199,13 @@ public class LogcatService implements Runnable {
     }
 
     public File getVerboseLog() {
+        flushLogs();
         var path = fdToPath(verboseFd);
         return path == null ? null : path.toFile();
     }
 
     public File getModulesLog() {
+        flushLogs();
         var path = fdToPath(modulesFd);
         return path == null ? null : path.toFile();
     }

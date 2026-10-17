@@ -21,7 +21,7 @@
 //! buffers, filters LSPosed-relevant entries, rotates log files and maintains
 //! the logd settings watchdog.
 
-use jni::objects::{JObject, JValue};
+use jni::objects::{JClass, JObject, JValue};
 use jni::JNIEnv;
 use std::ffi::{c_char, c_int, c_long, c_uint, c_void, CStr, CString};
 use std::fs::File;
@@ -29,7 +29,7 @@ use std::io::{self, BufWriter, Write};
 use std::os::fd::FromRawFd;
 use std::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 const LOGGER_ENTRY_MAX_LEN: usize = 5 * 1024;
@@ -291,6 +291,8 @@ impl Files {
     }
 }
 
+static FILES: OnceLock<Arc<Mutex<Files>>> = OnceLock::new();
+
 struct Logcat<'local> {
     env: JNIEnv<'local>,
     thiz: JObject<'local>,
@@ -455,17 +457,6 @@ impl<'local> Logcat<'local> {
         self.refresh(false);
         self.ensure_watchdog();
 
-        // Keep the buffered log files reasonably fresh without flushing on
-        // every line. A process kill should lose at most this interval.
-        let files = self.files.clone();
-        let _ = std::thread::Builder::new()
-            .name("logcat-flush".into())
-            .spawn(move || loop {
-                std::thread::sleep(Duration::from_millis(500));
-                if let Ok(mut files) = files.lock() {
-                    files.flush();
-                }
-            });
 
         let mut tail: c_uint = 0;
         loop {
@@ -645,15 +636,29 @@ extern "C" fn read_serial(cookie: *mut c_void, _name: *const c_char, _value: *co
 }
 
 #[no_mangle]
+pub extern "system" fn Java_org_lsposed_lspd_service_LogcatService_flushLogs(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    if let Some(files) = FILES.get() {
+        if let Ok(mut files) = files.lock() {
+            files.flush();
+        }
+    }
+}
+
+#[no_mangle]
 pub extern "system" fn Java_org_lsposed_lspd_service_LogcatService_runLogcat(
     env: JNIEnv,
     thiz: JObject,
 ) {
     let my_pid = unsafe { libc::getpid() };
+    let files = Arc::new(Mutex::new(Files::new()));
+    let _ = FILES.set(files.clone());
     let logcat = Logcat {
         env,
         thiz,
-        files: Arc::new(Mutex::new(Files::new())),
+        files,
         my_pid,
         line: Vec::with_capacity(128),
     };
