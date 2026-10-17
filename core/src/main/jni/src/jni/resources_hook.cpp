@@ -38,7 +38,7 @@ namespace {
     TYPE_GET_ATTR_NAME_ID ResXMLParser_getAttributeNameID = nullptr;
 
     std::string GetXResourcesClassName() {
-        auto &obfs_map = ConfigBridge::GetInstance()->obfuscation_map();
+        auto &obfs_map = lspd::ConfigBridge::GetInstance()->obfuscation_map();
         if (obfs_map.empty()) {
             LOGW("GetXResourcesClassName: obfuscation_map empty?????");
         }
@@ -50,7 +50,7 @@ namespace {
     }
 
     bool PrepareSymbols() {
-        SandHook::ElfImg fw(kLibFwName);
+        SandHook::ElfImg fw(lspd::kLibFwName);
         if (!fw.isValid()) {
             return false;
         };
@@ -114,7 +114,7 @@ extern "C" jobject lspd_resources_build_dummy(JNIEnv *env, jobject parent,
 }
 
 extern "C" void lspd_resources_rewrite_xml(JNIEnv *env, jlong parserPtr, jobject origRes,
-                                            jobject repRes, jobject xresources_class,
+                                            jobject repRes, jclass xresources_class,
                                             jmethodID translate_attr_mid,
                                             jmethodID translate_res_mid) {
     auto parser = (android::ResXMLParser *) parserPtr;

@@ -56,7 +56,7 @@ extern "C" {
         parser: jlong,
         original: jobject,
         replacement: jobject,
-        xresources_class: jobject,
+        xresources_class: jclass,
         translate_attr: jmethodID,
         translate_res: jmethodID,
     );
