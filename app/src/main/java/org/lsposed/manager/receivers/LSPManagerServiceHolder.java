@@ -40,6 +40,15 @@ public class LSPManagerServiceHolder implements IBinder.DeathRecipient {
         return service;
     }
 
+    /**
+     * Kotlin backend helper. Calling {@code getService().asBinder().isBinderAlive()} directly
+     * from Kotlin crashes the compiler on AIDL fake overrides, so keep it in Java.
+     */
+    public static boolean setBinder(IBinder binder) {
+        init(binder);
+        return getService().asBinder().isBinderAlive();
+    }
+
     private LSPManagerServiceHolder(IBinder binder) {
         linkToDeath(binder);
         service = ILSPManagerService.Stub.asInterface(binder);
