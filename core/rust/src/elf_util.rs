@@ -30,6 +30,8 @@ use goblin::elf::Elf;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::{c_char, c_void, CString};
 use std::io::Cursor;
+use std::ops::Deref;
+use std::os::fd::AsRawFd;
 use std::ptr;
 use std::slice;
 use std::sync::OnceLock;
@@ -46,12 +48,61 @@ impl Symtab {
     }
 }
 
+struct Mmap {
+    pointer: *mut c_void,
+    length: usize,
+}
+
+impl Mmap {
+    fn open(path: &str) -> Option<Self> {
+        let file = std::fs::File::open(path).ok()?;
+        let length = usize::try_from(file.metadata().ok()?.len()).ok()?;
+        if length == 0 {
+            return None;
+        }
+        let pointer = unsafe {
+            libc::mmap(
+                ptr::null_mut(),
+                length,
+                libc::PROT_READ,
+                libc::MAP_SHARED,
+                file.as_raw_fd(),
+                0,
+            )
+        };
+        if pointer == libc::MAP_FAILED {
+            None
+        } else {
+            Some(Self { pointer, length })
+        }
+    }
+}
+
+impl Deref for Mmap {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { slice::from_raw_parts(self.pointer as *const u8, self.length) }
+    }
+}
+
+impl Drop for Mmap {
+    fn drop(&mut self) {
+        if !self.pointer.is_null() {
+            unsafe { libc::munmap(self.pointer, self.length) };
+        }
+    }
+}
+
+unsafe impl Send for Mmap {}
+unsafe impl Sync for Mmap {}
+
 struct ElfHandle {
     path: CString,
     base: usize,
     bias: i64,
     dynsyms: HashMap<String, u64>,
-    file_data: Vec<u8>,
+    mapping: Option<Mmap>,
     debugdata: Option<Vec<u8>>,
     symtab: OnceLock<Symtab>,
 }
@@ -60,12 +111,11 @@ impl ElfHandle {
     fn new(requested: &str) -> Self {
         let (base, path) = find_module(requested).unwrap_or((0, String::new()));
         let path_c = CString::new(path.as_str()).unwrap_or_default();
-        let file_data = std::fs::read(&path).unwrap_or_default();
+        let mapping = Mmap::open(&path);
 
-        let (bias, dynsyms, debugdata) = if file_data.is_empty() {
-            (0, HashMap::new(), None)
-        } else {
-            parse_elf(&file_data)
+        let (bias, dynsyms, debugdata) = match mapping.as_deref() {
+            Some(data) => parse_elf(data),
+            None => (0, HashMap::new(), None),
         };
 
         Self {
@@ -73,7 +123,7 @@ impl ElfHandle {
             base,
             bias,
             dynsyms,
-            file_data,
+            mapping,
             debugdata,
             symtab: OnceLock::new(),
         }
@@ -103,7 +153,10 @@ impl ElfHandle {
                     return inner;
                 }
             }
-            collect_symtab(&self.file_data)
+            match self.mapping.as_deref() {
+                Some(data) => collect_symtab(data),
+                None => Symtab::default(),
+            }
         })
     }
 
