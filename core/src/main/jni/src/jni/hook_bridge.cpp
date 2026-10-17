@@ -18,6 +18,7 @@
  */
 
 #include "lsplant.hpp"
+#include "utils/jni_helper.hpp"
 #include <parallel_hashmap/phmap.h>
 #include <array>
 #include <cstdio>
