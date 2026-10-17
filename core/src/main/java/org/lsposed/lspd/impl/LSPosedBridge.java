@@ -115,6 +115,8 @@ public class LSPosedBridge {
         XposedInterface.Hooker[] hookers(int maxPriority) {
             var snapshot = current;
             var all = snapshot.hookers;
+            // Hot path: every interception asks for all hookers, so skip the priority check.
+            if (maxPriority >= XposedInterface.PRIORITY_HIGHEST) return all;
             if (all.length == 0 || maxPriority >= snapshot.priorities[0]) return all;
             var start = 0;
             while (start < all.length && snapshot.priorities[start] > maxPriority) start++;
@@ -157,21 +159,25 @@ public class LSPosedBridge {
     }
 
     public static class NativeHooker<T extends Executable> {
-        private final Object[] params;
+        // All per-method state is resolved once; the callback path only reads fields.
+        private final T method;
+        private final Class<?> returnType;
+        private final boolean isStatic;
+        private final boolean isConstructor;
+        private final HookList hookList;
 
+        @SuppressWarnings("unchecked")
         private NativeHooker(Executable method) {
-            params = new Object[]{
-                    method,
-                    returnTypeOf(method),
-                    Modifier.isStatic(method.getModifiers()),
-            };
+            this.method = (T) method;
+            this.returnType = returnTypeOf(method);
+            this.isStatic = Modifier.isStatic(method.getModifiers());
+            this.isConstructor = method instanceof Constructor;
+            // The HookList instance is stable for the lifetime of the method; caching it avoids a
+            // ConcurrentHashMap lookup on every interception.
+            this.hookList = hookList(method);
         }
 
         public Object callback(Object[] rawArgs) throws Throwable {
-            var method = (T) params[0];
-            var returnType = (Class<?>) params[1];
-            var isStatic = (Boolean) params[2];
-
             Object thisObject;
             Object[] args;
             if (isStatic) {
@@ -183,12 +189,12 @@ public class LSPosedBridge {
                 System.arraycopy(rawArgs, 1, args, 0, args.length);
             }
 
-            var hookers = hookersOf(method, XposedInterface.PRIORITY_HIGHEST);
+            var hookers = hookList.hookers(XposedInterface.PRIORITY_HIGHEST);
             if (hookers.length == 0) {
-                return invokeOriginal(method, thisObject, args, method instanceof Constructor);
+                return invokeOriginal(method, thisObject, args, isConstructor);
             }
 
-            var chain = new ChainImpl<>(method, returnType, hookers, thisObject, args, false);
+            var chain = new ChainImpl<>(method, returnType, hookers, thisObject, args, false, isConstructor);
             try {
                 return chain.proceed();
             } finally {
@@ -245,19 +251,21 @@ public class LSPosedBridge {
         private final Class<?> returnType;
         private final XposedInterface.Hooker[] hookers;
         private final boolean special;
+        private final boolean isConstructor;
         private int index = -1;
         private boolean active = true;
         private Object thisObject;
         private Object[] args;
 
         ChainImpl(T executable, Class<?> returnType, XposedInterface.Hooker[] hookers,
-                  Object thisObject, Object[] args, boolean special) {
+                  Object thisObject, Object[] args, boolean special, boolean isConstructor) {
             this.executable = executable;
             this.returnType = returnType;
             this.hookers = hookers == null ? EMPTY_HOOKERS : hookers;
             this.thisObject = thisObject;
             this.args = args == null ? EMPTY_ARRAY : args;
             this.special = special;
+            this.isConstructor = isConstructor;
         }
 
         void close() {
@@ -311,7 +319,7 @@ public class LSPosedBridge {
                         return unwrapInvocationTarget(e);
                     }
                 }
-                return checkReturnType(invokeOriginal(executable, thisObject, args, executable instanceof Constructor), returnType);
+                return checkReturnType(invokeOriginal(executable, thisObject, args, isConstructor), returnType);
             } finally {
                 index--;
             }
@@ -603,10 +611,14 @@ public class LSPosedBridge {
 
     static class BaseInvoker<T extends Executable> {
         final T executable;
+        private final Class<?> returnType;
+        private final boolean isConstructor;
         protected Object target;
 
         BaseInvoker(T executable) {
             this.executable = executable;
+            this.returnType = returnTypeOf(executable);
+            this.isConstructor = executable instanceof Constructor;
             this.target = XposedInterface.Invoker.Type.Chain.FULL;
             executable.setAccessible(true);
         }
@@ -615,7 +627,7 @@ public class LSPosedBridge {
             var type = (XposedInterface.Invoker.Type) target;
             Objects.requireNonNull(type);
             if (type instanceof XposedInterface.Invoker.Type.Origin) {
-                return HookBridge.invokeOriginalMethod(executable, thisObject, args, executable instanceof Constructor);
+                return HookBridge.invokeOriginalMethod(executable, thisObject, args, isConstructor);
             }
             if (!(type instanceof XposedInterface.Invoker.Type.Chain chainType)) {
                 throw new IllegalStateException("Unknown invoker type");
@@ -645,7 +657,7 @@ public class LSPosedBridge {
         Object invokeChain(Object thisObject, Object[] args, int maxPriority, boolean special)
                 throws InvocationTargetException, IllegalAccessException {
             var hookers = hookersOf(executable, maxPriority);
-            var chain = new ChainImpl<>(executable, returnTypeOf(executable), hookers, thisObject, args, special);
+            var chain = new ChainImpl<>(executable, returnType, hookers, thisObject, args, special, isConstructor);
             try {
                 return chain.proceed();
             } catch (Error | RuntimeException | InvocationTargetException | IllegalAccessException e) {
