@@ -25,7 +25,7 @@ use jni::objects::{JObject, JValue};
 use jni::JNIEnv;
 use std::ffi::{c_char, c_int, c_long, c_uint, c_void, CStr, CString};
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 use std::os::fd::FromRawFd;
 use std::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -208,14 +208,14 @@ fn set_str_prop(name: &[u8], value: &[u8]) {
 }
 
 struct Output {
-    file: Option<File>,
+    file: Option<BufWriter<File>>,
 }
 
 impl Output {
     fn from_fd(fd: c_int) -> Self {
         Self {
             file: if fd > 0 {
-                Some(unsafe { File::from_raw_fd(fd) })
+                Some(BufWriter::new(unsafe { File::from_raw_fd(fd) }))
             } else {
                 None
             },
@@ -270,13 +270,11 @@ impl Files {
 
     fn write_verbose(&mut self, data: &[u8]) {
         self.verbose.write_all(data);
-        self.verbose.flush();
         self.verbose_count += data.len();
     }
 
     fn write_modules(&mut self, data: &[u8]) {
         self.modules.write_all(data);
-        self.modules.flush();
         self.modules_count += data.len();
     }
 

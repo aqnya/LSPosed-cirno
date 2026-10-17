@@ -28,7 +28,7 @@ use jni::sys::{
 use jni::{JNIEnv, NativeMethod};
 use std::ffi::{c_char, c_void};
 use std::ptr;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 
 struct XResources {
     class: GlobalRef,
@@ -37,11 +37,7 @@ struct XResources {
     translate_res: usize,
 }
 
-static STATE: OnceLock<Mutex<Option<XResources>>> = OnceLock::new();
-
-fn state() -> &'static Mutex<Option<XResources>> {
-    STATE.get_or_init(|| Mutex::new(None))
-}
+static STATE: OnceLock<XResources> = OnceLock::new();
 
 extern "C" {
     fn lspd_get_current_class_loader() -> jobject;
@@ -121,16 +117,17 @@ pub extern "system" fn Java_org_lsposed_lspd_nativebridge_ResourcesHook_initXRes
         return JNI_FALSE;
     }
 
-    if let Ok(mut state) = state().lock() {
-        *state = Some(XResources {
-            class: class_global,
-            class_name,
-            translate_attr,
-            translate_res,
-        });
-        JNI_TRUE
-    } else {
-        JNI_FALSE
+    if STATE.get().is_some() {
+        return JNI_TRUE;
+    }
+    match STATE.set(XResources {
+        class: class_global,
+        class_name,
+        translate_attr,
+        translate_res,
+    }) {
+        Ok(()) => JNI_TRUE,
+        Err(_) => JNI_FALSE,
     }
 }
 
@@ -172,17 +169,12 @@ pub extern "system" fn Java_org_lsposed_lspd_nativebridge_ResourcesHook_rewriteX
     original: JObject,
     replacement: JObject,
 ) {
-    let state = match state().lock() {
-        Ok(state) => state,
-        Err(_) => return,
-    };
-    let Some(state) = state.as_ref() else {
+    let Some(state) = STATE.get() else {
         return;
     };
     let class = state.class.as_obj().as_raw();
     let translate_attr = state.translate_attr as jmethodID;
     let translate_res = state.translate_res as jmethodID;
-    drop(state);
 
     unsafe {
         lspd_resources_rewrite_xml(

@@ -29,17 +29,17 @@ use jni::{JNIEnv, NativeMethod};
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::{c_char, c_void};
 use std::ptr;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{OnceLock, RwLock};
 
 struct HookItem {
     backup: usize,
     callbacks: BTreeMap<jint, Vec<GlobalRef>>,
 }
 
-static HOOKS: OnceLock<Mutex<HashMap<usize, HookItem>>> = OnceLock::new();
+static HOOKS: OnceLock<RwLock<HashMap<usize, HookItem>>> = OnceLock::new();
 
-fn hooks() -> &'static Mutex<HashMap<usize, HookItem>> {
-    HOOKS.get_or_init(|| Mutex::new(HashMap::new()))
+fn hooks() -> &'static RwLock<HashMap<usize, HookItem>> {
+    HOOKS.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
 extern "C" {
@@ -136,7 +136,7 @@ pub extern "system" fn Java_org_lsposed_lspd_nativebridge_HookBridge_hookMethod(
         Err(_) => return JNI_FALSE,
     };
 
-    if let Ok(mut hooks) = hooks().lock() {
+    if let Ok(mut hooks) = hooks().write() {
         if let Some(item) = hooks.get_mut(&target) {
             add_callback(item, priority, callback);
             return JNI_TRUE;
@@ -182,7 +182,7 @@ pub extern "system" fn Java_org_lsposed_lspd_nativebridge_HookBridge_hookMethod(
         return JNI_FALSE;
     }
 
-    let Ok(mut hooks) = hooks().lock() else {
+    let Ok(mut hooks) = hooks().write() else {
         return JNI_FALSE;
     };
     if let Some(item) = hooks.get_mut(&target) {
@@ -215,7 +215,7 @@ pub extern "system" fn Java_org_lsposed_lspd_nativebridge_HookBridge_unhookMetho
             None => return JNI_FALSE,
         }
     };
-    let mut hooks = match hooks().lock() {
+    let mut hooks = match hooks().write() {
         Ok(hooks) => hooks,
         Err(_) => return JNI_FALSE,
     };
@@ -271,7 +271,7 @@ pub extern "system" fn Java_org_lsposed_lspd_nativebridge_HookBridge_invokeOrigi
         }
     };
     let backup = {
-        let hooks = match hooks().lock() {
+        let hooks = match hooks().read() {
             Ok(hooks) => hooks,
             Err(_) => return ptr::null_mut(),
         };
@@ -420,7 +420,7 @@ pub extern "system" fn Java_org_lsposed_lspd_nativebridge_HookBridge_callbackSna
             None => return ptr::null_mut(),
         }
     };
-    let hooks = match hooks().lock() {
+    let hooks = match hooks().read() {
         Ok(hooks) => hooks,
         Err(_) => return ptr::null_mut(),
     };
